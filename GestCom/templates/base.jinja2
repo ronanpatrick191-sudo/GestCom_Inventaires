@@ -1,0 +1,410 @@
+<!-- base.jinja2 : gabarit commun à toutes les pages (topbar + sidebar + zone de contenu). -->
+<!-- Les autres templates (dashboard, inventaire, stock...) héritent de celui-ci via le
+     mot-clé Jinja "extends", et ne remplissent que les zones ("blocks") définies ici. -->
+<!DOCTYPE html>
+<!-- Déclare que la page utilise le standard HTML5. -->
+<html lang="fr">
+<!-- Langue de la page : français (utile pour l'accessibilité et les moteurs de recherche). -->
+<head>
+  <meta charset="UTF-8">
+  <!-- Encodage des caractères : permet d'afficher correctement les accents français. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Rend la page correctement adaptée aux écrans de mobile/tablette. -->
+  <title>GestCom — {% block title %}Accueil{% endblock %}</title>
+  <!-- Titre de l'onglet du navigateur ; la zone "title" peut être redéfinie par chaque page
+       (ex: "GestCom — Dashboard"), "Accueil" est la valeur par défaut si non redéfinie. -->
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Charge la feuille de style Bootstrap 5 depuis un CDN externe (grille, boutons, etc.). -->
+
+  <style>
+    /* Bloc de CSS personnalisé propre à GestCom, en complément de Bootstrap. */
+    :root {
+      /* Variables CSS réutilisables partout dans la feuille de style avec var(--nom). */
+      --gc-vert:        #1D9E75;
+      /* Couleur principale de la marque GestCom (vert). */
+      --gc-vert-fonce:  #085041;
+      /* Vert plus foncé, utilisé pour le survol (hover) des éléments verts. */
+      --gc-vert-clair:  #E1F5EE;
+      /* Vert très clair, utilisé comme fond pour les éléments actifs/sélectionnés. */
+      --gc-fond:        #f5f5f0;
+      /* Couleur de fond générale de la page (gris très clair). */
+      --gc-border:      #e8e8e0;
+      /* Couleur des bordures/séparateurs discrets. */
+    }
+
+    body {
+      background: var(--gc-fond);
+      font-family: system-ui, -apple-system, sans-serif;
+      /* Utilise la police système par défaut du système d'exploitation de l'utilisateur. */
+    }
+
+    /* ── Barre du haut ── */
+    .gc-topbar {
+      /* Barre horizontale verte tout en haut de la page. */
+      background: var(--gc-vert);
+      height: 52px;
+      display: flex;
+      /* Aligne ses enfants (logo, recherche, cloche, avatar) sur une seule ligne. */
+      align-items: center;
+      padding: 0 20px;
+      gap: 12px;
+      /* Espace fixe entre chaque élément de la barre. */
+    }
+    .gc-topbar .brand     { font-size: 16px; font-weight: 500; color: #fff; flex-shrink: 0; }
+    /* Style du texte "GestCom" : ne rétrécit jamais (flex-shrink: 0), même si l'espace manque. */
+    .gc-topbar .badge-pro { background: rgba(255,255,255,.2); color: #fff;
+                            font-size: 10px; padding: 2px 8px; border-radius: 99px; flex-shrink: 0; }
+    /* Petite pastille "PRO" à côté du logo, fond blanc semi-transparent, forme arrondie (pilule). */
+    .gc-topbar .date-label{ font-size: 12px; color: rgba(255,255,255,.75); flex-shrink: 0; }
+    /* Style du texte affichant la date du jour et la ville. */
+
+    /* ── Recherche globale ── */
+    .gc-recherche { position: relative; flex: 1; max-width: 320px; margin: 0 auto 0 20px; }
+    /* Conteneur de la barre de recherche ; "position: relative" sert de repère pour positionner
+       le menu déroulant de résultats juste en dessous. */
+    .gc-recherche input {
+      width: 100%; background: rgba(255,255,255,.18); border: none; outline: none;
+      border-radius: 99px; padding: 6px 14px; font-size: 12px; color: #fff;
+    }
+    /* Style du champ de saisie : fond translucide, forme arrondie, texte blanc. */
+    .gc-recherche input::placeholder { color: rgba(255,255,255,.65); }
+    /* Couleur du texte d'indication ("Chercher un produit...") avant saisie. */
+    .gc-recherche-resultats {
+      display: none; position: absolute; top: 34px; left: 0; right: 0;
+      background: #fff; border: 1px solid var(--gc-border); border-radius: 10px;
+      overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,.12); z-index: 1000;
+    }
+    /* Menu déroulant des résultats de recherche : caché par défaut (display: none),
+       positionné juste sous le champ de saisie. */
+    .gc-recherche-resultats.show { display: block; }
+    /* Classe ajoutée par JavaScript pour afficher le menu quand des résultats existent. */
+    .gc-recherche-resultats a {
+      display: flex; justify-content: space-between; padding: 8px 12px;
+      font-size: 12px; color: #1a1a18; text-decoration: none;
+    }
+    /* Style de chaque ligne de résultat (nom du produit à gauche, stock à droite). */
+    .gc-recherche-resultats a:hover { background: var(--gc-fond); }
+    /* Fond légèrement grisé au survol d'un résultat. */
+    .gc-recherche-resultats .vide { padding: 10px 12px; font-size: 12px; color: #9c9a92; }
+    /* Style du message "Aucun produit trouvé". */
+
+    /* ── Cloche d'alertes + avatar ── */
+    .gc-bell {
+      position: relative; width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(255,255,255,.15); display: flex; align-items: center;
+      justify-content: center; text-decoration: none; flex-shrink: 0;
+    }
+    /* Bouton rond contenant l'icône cloche (lien vers la page Alertes). */
+    .gc-bell .dot {
+      position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+      background: #EF9F27; border: 1.5px solid var(--gc-vert); border-radius: 50%;
+    }
+    /* Petit point orange affiché sur la cloche uniquement s'il y a des alertes non lues. */
+    .gc-avatar {
+      display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.15);
+      border-radius: 99px; padding: 4px 10px 4px 4px; flex-shrink: 0;
+    }
+    /* Bloc "photo de profil + nom" tout à droite de la barre du haut. */
+    .gc-avatar .cercle {
+      width: 22px; height: 22px; border-radius: 50%; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 600; color: var(--gc-vert);
+    }
+    /* Cercle blanc contenant les initiales de l'utilisateur ("JD"). */
+    .gc-avatar .nom { font-size: 11px; color: #fff; font-weight: 500; }
+    /* Style du nom affiché à côté du cercle d'initiales. */
+
+    /* ── Sidebar ── */
+    .gc-sidebar {
+      width: 210px;
+      min-height: calc(100vh - 52px);
+      /* Hauteur minimale = toute la hauteur de l'écran moins la hauteur de la barre du haut (52px),
+         pour que la sidebar remplisse toujours l'écran même si le contenu est court. */
+      background: #fff;
+      border-right: 1px solid var(--gc-border);
+      padding: 14px 10px;
+      flex-shrink: 0;
+      /* Ne rétrécit jamais, même si le contenu principal a besoin de plus de place. */
+    }
+    .gc-sidebar .nav-label {
+      font-size: 10px; color: #9c9a92; padding: 6px 8px 3px;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    /* Style du petit titre "MENU PRINCIPAL" au-dessus des liens, en majuscules espacées. */
+    .gc-sidebar .nav-link {
+      color: #6b6a64; border-radius: 8px; padding: 8px 10px;
+      font-size: 13px; margin-bottom: 2px; display: flex;
+      align-items: center; gap: 8px;
+    }
+    /* Style de base de chaque lien du menu (icône + texte alignés horizontalement). */
+    .gc-sidebar .nav-link:hover  { background: var(--gc-fond); color: #1a1a18; }
+    /* Fond grisé au survol d'un lien du menu. */
+    .gc-sidebar .nav-link.active { background: var(--gc-vert-clair);
+                                   color: var(--gc-vert-fonce); font-weight: 500; }
+    /* Style du lien correspondant à la page actuellement affichée (fond vert clair). */
+    .gc-sidebar .nav-link .badge { font-size: 10px; }
+    /* Style de la petite pastille numérique (ex: nombre d'alertes) à côté d'un lien. */
+
+    /* ── Contenu principal ── */
+    .gc-main    { flex: 1; padding: 20px; min-width: 0; }
+    /* Zone principale à droite de la sidebar ; "flex: 1" occupe tout l'espace restant. */
+    .gc-card    { background: #fff; border: 1px solid var(--gc-border);
+                  border-radius: 12px; overflow: hidden; }
+    /* Style générique d'une "carte" blanche utilisée pour encadrer un bloc de contenu. */
+    .gc-card-h  { padding: 11px 16px; border-bottom: 1px solid var(--gc-border);
+                  display: flex; align-items: center; justify-content: space-between; }
+    /* En-tête d'une carte : titre à gauche, éventuel bouton/info à droite. */
+    .gc-card-title { font-size: 13px; font-weight: 500; color: #1a1a18; }
+    /* Style du titre affiché dans l'en-tête d'une carte. */
+    .gc-card-sub   { font-size: 11px; color: #9c9a92; }
+    /* Style du sous-titre discret affiché dans l'en-tête d'une carte. */
+
+    /* ── KPI Cards ── */
+    .kpi-card    { border-radius: 10px; padding: 14px 16px; }
+    /* Style commun aux cartes d'indicateurs chiffrés (ventes, profit...) du dashboard. */
+    .kpi-label   { font-size: 11px; font-weight: 500; margin-bottom: 5px; }
+    /* Style du petit libellé au-dessus du chiffre (ex: "Ventes du jour"). */
+    .kpi-value   { font-size: 22px; font-weight: 500; line-height: 1; }
+    /* Style du gros chiffre principal affiché dans la carte. */
+    .kpi-detail  { font-size: 11px; margin-top: 4px; }
+    /* Style du petit texte de détail sous le chiffre. */
+
+    /* ── Badges stock ── */
+    .badge-ok      { background: #EAF3DE; color: #27500A; }
+    /* Style du badge vert : stock suffisant. */
+    .badge-bas     { background: #FAEEDA; color: #633806; }
+    /* Style du badge orange : stock bas, à surveiller. */
+    .badge-rupture { background: #FCEBEB; color: #791F1F; }
+    /* Style du badge rouge : produit en rupture totale. */
+
+    /* ── Bouton principal ── */
+    .btn-gc {
+      background: var(--gc-vert); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 16px; font-size: 13px;
+      font-weight: 500; cursor: pointer; transition: background .15s;
+    }
+    /* Bouton principal vert de l'application, utilisé pour les actions importantes. */
+    .btn-gc:hover { background: var(--gc-vert-fonce); color: #fff; }
+    /* Devient plus foncé au survol de la souris. */
+
+    /* ── Toast notification ── */
+    .gc-toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--gc-vert); color: #fff;
+      padding: 10px 18px; border-radius: 8px; font-size: 13px;
+      font-weight: 500; display: none; z-index: 9999;
+    }
+    /* Petite notification flottante en bas à droite de l'écran, cachée par défaut. */
+    .gc-toast.show { display: block; }
+    /* Classe ajoutée par JavaScript pour faire apparaître la notification. */
+  </style>
+
+  {% block head %}{% endblock %}
+  <!-- Emplacement où une page enfant peut injecter des balises supplémentaires dans <head>. -->
+</head>
+<body>
+
+<!-- ── Barre du haut ── -->
+<nav class="gc-topbar">
+  <span class="brand">GestCom</span>
+  <!-- Nom de l'application affiché en haut à gauche. -->
+  <span class="badge-pro">PRO</span>
+  <!-- Petite étiquette "PRO" décorative. -->
+
+  <div class="gc-recherche">
+    <input id="recherche-globale" placeholder="Chercher un produit..." autocomplete="off">
+    <!-- Champ de recherche ; autocomplete="off" désactive les suggestions du navigateur. -->
+    <div class="gc-recherche-resultats" id="recherche-resultats"></div>
+    <!-- Conteneur vide, rempli dynamiquement par JavaScript avec les résultats trouvés. -->
+  </div>
+
+  {% if aujourd_hui is defined %}
+    <!-- N'affiche la date que si la vue Python a bien transmis la variable "aujourd_hui". -->
+    <span class="date-label">{{ aujourd_hui }} · Yaoundé</span>
+    <!-- Affiche la date du jour reçue depuis views.py, suivie de la ville. -->
+  {% endif %}
+
+  <a href="{{ request.route_url('alertes') }}" class="gc-bell" title="Alertes">
+    <!-- Lien vers la page Alertes ; request.route_url() construit l'URL correspondant à la route. -->
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <!-- Icône en forme de cloche, dessinée directement en SVG (pas une image externe). -->
+      <path d="M8 2a5 5 0 00-5 5v3l-1 1h12l-1-1V7a5 5 0 00-5-5z" stroke="#fff" stroke-width="1.3"/>
+      <path d="M6.5 13a1.5 1.5 0 003 0" stroke="#fff" stroke-width="1.3"/>
+    </svg>
+    {% if nb_alertes_non_lues is defined and nb_alertes_non_lues > 0 %}
+      <!-- N'affiche le point orange que s'il existe au moins une alerte non lue. -->
+      <span class="dot"></span>
+    {% endif %}
+  </a>
+
+  <div class="gc-avatar">
+    <span class="cercle">MF</span>
+    <!-- Initiales de l'utilisateur connecté (valeur fixe pour l'instant, pas de vrai compte). -->
+    <span class="nom">Mvanley Finance</span>
+    <!-- Nom affiché à côté (valeur fixe également). -->
+  </div>
+</nav>
+
+<div class="d-flex">
+  <!-- Conteneur flex Bootstrap : place la sidebar et le contenu principal côte à côte. -->
+
+  <!-- ── Sidebar ── -->
+  <div class="gc-sidebar">
+    <div class="nav-label">Menu principal</div>
+    <nav class="nav flex-column">
+      <!-- "flex-column" (Bootstrap) empile les liens du menu verticalement. -->
+
+      <a href="{{ request.route_url('dashboard') }}"
+         class="nav-link {% if request.matched_route.name == 'dashboard' %}active{% endif %}">
+        <!-- Lien vers le Dashboard ; ajoute la classe "active" si c'est la page actuellement affichée. -->
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.3" fill="currentColor" opacity=".8"/><rect x="9" y="1" width="6" height="6" rx="1.3" fill="currentColor" opacity=".4"/><rect x="1" y="9" width="6" height="6" rx="1.3" fill="currentColor" opacity=".4"/><rect x="9" y="9" width="6" height="6" rx="1.3" fill="currentColor" opacity=".4"/></svg>
+        <!-- Icône en forme de grille (4 carrés), symbole du tableau de bord. -->
+        Dashboard
+      </a>
+
+      <a href="{{ request.route_url('inventaire') }}"
+         class="nav-link {% if request.matched_route.name in ('inventaire', 'produit_ajouter', 'produit_modifier', 'produit_supprimer') %}active{% endif %}">
+        <!-- Actif aussi sur les routes d'ajout/modification/suppression de produit,
+             qui font partie de la même section "Produits". -->
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2"/></svg>
+        <!-- Icône en forme de carton/boîte, symbole des produits. -->
+        Produits
+      </a>
+
+      <a href="{{ request.route_url('stock') }}"
+         class="nav-link {% if request.matched_route.name in ('stock', 'stock_alerte_groupee') %}active{% endif %}">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="6" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 6V5a3.5 3.5 0 017 0v1" stroke="currentColor" stroke-width="1.2"/></svg>
+        <!-- Icône en forme de sac/valise, symbole du stock. -->
+        Stock
+      </a>
+
+      <a href="{{ request.route_url('caisse') }}"
+         class="nav-link {% if request.matched_route.name in ('caisse', 'vente_enregistrer', 'caisse_mtn', 'caisse_mtn_verif', 'caisse_orange', 'caisse_orange_verif') %}active{% endif %}">
+        <!-- Actif sur toutes les routes liées à la vente et aux paiements mobiles. -->
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M1 7h14" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="10.5" r="1" fill="currentColor"/></svg>
+        <!-- Icône en forme de caisse enregistreuse. -->
+        Caisse
+      </a>
+
+      <a href="{{ request.route_url('rapport') }}"
+         class="nav-link {% if request.matched_route.name == 'rapport' %}active{% endif %}">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 13c2-3 4-2 5-4.5S11 5 14 3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+        <!-- Icône en forme de courbe croissante, symbole du rapport financier. -->
+        Rapport
+      </a>
+
+      <a href="{{ request.route_url('alertes') }}"
+         class="nav-link {% if request.matched_route.name in ('alertes', 'alerte_lire', 'alerte_email_test') %}active{% endif %}">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2a5 5 0 00-5 5v3l-1 1h12l-1-1V7a5 5 0 00-5-5z" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 13a1.5 1.5 0 003 0" stroke="currentColor" stroke-width="1.2"/></svg>
+        Alertes
+        {% if nb_alertes_non_lues is defined and nb_alertes_non_lues > 0 %}
+          <!-- Affiche le nombre exact d'alertes non lues dans une pastille rouge, si > 0. -->
+          <span class="badge bg-danger ms-auto">{{ nb_alertes_non_lues }}</span>
+          <!-- "ms-auto" (Bootstrap) pousse la pastille tout à droite du lien. -->
+        {% endif %}
+      </a>
+
+    </nav>
+  </div>
+
+  <!-- ── Contenu principal ── -->
+  <main class="gc-main">
+    {% block content %}{% endblock %}
+    <!-- Emplacement rempli par le contenu propre à chaque page (dashboard, inventaire...). -->
+  </main>
+
+</div>
+
+<!-- Toast global -->
+<div class="gc-toast" id="gc-toast"></div>
+<!-- Boîte de notification vide, remplie et affichée dynamiquement par la fonction gcToast() ci-dessous. -->
+
+<!-- Bootstrap JS + Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Comportements interactifs de Bootstrap (menus, modales...). -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Bibliothèque utilisée pour dessiner les graphiques (dashboard, rapport). -->
+
+<script>
+  /* Affiche un toast de notification */
+  function gcToast(msg, duree = 2800) {
+    // Fonction réutilisable par toutes les pages pour afficher un message temporaire.
+    // "duree" a une valeur par défaut de 2800 millisecondes (2,8 secondes) si non précisée.
+    const t = document.getElementById('gc-toast');
+    // Récupère la boîte de notification définie plus haut dans le HTML.
+    t.textContent = msg;
+    // Insère le texte du message à afficher.
+    t.classList.add('show');
+    // Ajoute la classe CSS qui rend la boîte visible (display: block).
+    setTimeout(() => t.classList.remove('show'), duree);
+    // Après "duree" millisecondes, retire la classe pour faire disparaître la notification.
+  }
+
+  /* ── Recherche globale (topbar) ── */
+  (function () {
+    // Fonction immédiatement invoquée (IIFE) : isole ces variables du reste du script.
+    const input      = document.getElementById('recherche-globale');
+    // Le champ de saisie de la recherche.
+    const resultats   = document.getElementById('recherche-resultats');
+    // Le conteneur où afficher les résultats.
+    if (!input || !resultats) return;
+    // Sécurité : si ces éléments n'existent pas dans la page, on arrête ici (évite une erreur JS).
+
+    let minuteur = null;
+    // Variable qui retiendra le minuteur (timer) utilisé pour ne pas chercher à chaque frappe.
+
+    input.addEventListener('input', () => {
+      // Se déclenche à chaque caractère tapé/effacé dans le champ de recherche.
+      clearTimeout(minuteur);
+      // Annule la recherche précédente encore en attente (si l'utilisateur tape vite).
+      const q = input.value.trim();
+      // Récupère le texte tapé, sans espaces inutiles au début/à la fin.
+      if (q.length < 2) { resultats.classList.remove('show'); return; }
+      // Si moins de 2 caractères, on cache les résultats et on ne cherche pas.
+
+      minuteur = setTimeout(async () => {
+        // Attend 250 millisecondes après la dernière frappe avant de vraiment chercher
+        // (évite d'envoyer une requête au serveur à chaque lettre tapée).
+        try {
+          const res  = await fetch('{{ request.route_url("recherche") }}?q=' + encodeURIComponent(q));
+          // Appelle la route "recherche" côté serveur (views.py) avec le texte recherché encodé.
+          const data = await res.json();
+          // Convertit la réponse du serveur (JSON) en objet JavaScript utilisable.
+          afficherResultats(data.resultats || []);
+          // Affiche les résultats reçus (liste vide si "resultats" est absent).
+        } catch (e) { /* recherche best-effort, pas de toast bloquant */ }
+        // En cas d'erreur réseau, on ignore silencieusement plutôt que de déranger l'utilisateur.
+      }, 250);
+    });
+
+    function afficherResultats(items) {
+      // Construit le HTML du menu déroulant à partir de la liste de produits trouvés.
+      if (items.length === 0) {
+        resultats.innerHTML = '<div class="vide">Aucun produit trouvé</div>';
+        // Aucun résultat : affiche un message plutôt qu'une liste vide.
+      } else {
+        resultats.innerHTML = items.map(p =>
+          '<a href="' + p.url + '"><span>' + p.nom + '</span>' +
+          '<span style="color:#9c9a92">' + p.stock + ' ' + p.unite + '</span></a>'
+        ).join('');
+        // Transforme chaque résultat en un lien cliquable "nom — stock unité",
+        // puis assemble tous les liens en une seule chaîne HTML insérée dans le conteneur.
+      }
+      resultats.classList.add('show');
+      // Rend le menu déroulant visible.
+    }
+
+    document.addEventListener('click', (e) => {
+      // Écoute les clics sur toute la page.
+      if (!e.target.closest('.gc-recherche')) resultats.classList.remove('show');
+      // Si le clic a eu lieu en dehors de la zone de recherche, on referme le menu déroulant.
+    });
+  })();
+</script>
+
+{% block scripts %}{% endblock %}
+<!-- Emplacement où une page enfant peut ajouter son propre code JavaScript. -->
+</body>
+</html>

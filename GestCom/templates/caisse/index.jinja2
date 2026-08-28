@@ -1,0 +1,529 @@
+{% extends "base.jinja2" %}
+{% block title %}Caisse{% endblock %}
+<!-- Page "Caisse" : formulaire de vente, reçu en direct, QR code de paiement mobile money,
+     et historique des ventes de la session en cours. Toute la logique de vente se fait
+     en JavaScript (fetch), sans recharger la page à chaque vente. -->
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Caisse</h5>
+    <div style="font-size:12px;color:#6b6a64">
+      Enregistrer une vente — {{ produits|length }} produits disponibles
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- ── Colonne gauche : formulaire de vente ── -->
+  <div class="col-md-6">
+    <div class="gc-card">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Nouvelle vente</span>
+      </div>
+      <div class="p-3" style="display:flex;flex-direction:column;gap:14px">
+
+        <!-- Produit -->
+        <div>
+          <label style="font-size:12px;color:#6b6a64;display:block;margin-bottom:4px">
+            Produit *
+          </label>
+          <select id="sel-produit" class="form-select form-select-sm"
+                  onchange="majPrix()">
+            <!-- Au changement de sélection, met à jour le prix affiché et le stock disponible. -->
+            <option value="">-- Choisir un produit --</option>
+            {% for p in produits %}
+            {# Chaque option stocke le prix, le stock, le nom et l'unité du produit
+               dans des attributs data-*, relus ensuite par le JavaScript (majPrix, majTotal...). #}
+            <option value="{{ p.id }}"
+                    data-prix="{{ p.prix_vente }}"
+                    data-stock="{{ p.stock }}"
+                    data-nom="{{ p.nom }}"
+                    data-unite="{{ p.unite }}">
+              {{ p.nom }} — {{ "{:,.0f}".format(p.prix_vente) }} FCFA
+              (stock : {{ p.stock }} {{ p.unite }})
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Quantite -->
+        <div>
+          <label style="font-size:12px;color:#6b6a64;display:block;margin-bottom:4px">
+            Quantite *
+          </label>
+          <input type="number" id="inp-qte" class="form-control form-control-sm"
+                 value="1" min="1" oninput="majTotal()">
+          <!-- Recalcule le total à chaque changement de quantité saisie. -->
+          <div id="stock-info" style="font-size:11px;color:#9c9a92;margin-top:3px"></div>
+          <!-- Rempli par JavaScript avec "Stock disponible : X unités". -->
+        </div>
+
+        <!-- Total calcule -->
+        <div style="background:#E1F5EE;border-radius:8px;padding:12px 14px">
+          <div style="font-size:11px;color:#085041;margin-bottom:2px">Total a encaisser</div>
+          <div id="total-affiche"
+               style="font-size:24px;font-weight:500;color:#085041">
+            0 FCFA
+          </div>
+          <!-- Mis à jour en direct par la fonction JS majTotal() (prix × quantité). -->
+        </div>
+
+        <!-- Mode de paiement -->
+        <div>
+          <label style="font-size:12px;color:#6b6a64;display:block;margin-bottom:8px">
+            Mode de paiement *
+          </label>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            <!-- Grille à 3 colonnes égales pour les 3 boutons de mode de paiement. -->
+
+            <div class="mode-btn active" id="btn-cash"
+                 onclick="selMode('cash')"
+                 style="padding:10px 8px;border-radius:8px;border:1.5px solid #1D9E75;
+                        background:#E1F5EE;text-align:center;cursor:pointer;
+                        transition:all .15s">
+              <!-- "Cash" est le mode sélectionné par défaut à l'ouverture de la page. -->
+              <div style="font-size:11px;font-weight:500;color:#085041">Cash</div>
+              <div style="font-size:10px;color:#1D9E75">Especes</div>
+            </div>
+
+            <div class="mode-btn" id="btn-orange"
+                 onclick="selMode('orange')"
+                 style="padding:10px 8px;border-radius:8px;border:1.5px solid #e8e8e0;
+                        background:#fff;text-align:center;cursor:pointer;
+                        transition:all .15s">
+              <div style="font-size:11px;font-weight:500;color:#633806">Orange Money</div>
+              <div style="font-size:10px;color:#854F0B">QR Code</div>
+            </div>
+
+            <div class="mode-btn" id="btn-mtn"
+                 onclick="selMode('mtn')"
+                 style="padding:10px 8px;border-radius:8px;border:1.5px solid #e8e8e0;
+                        background:#fff;text-align:center;cursor:pointer;
+                        transition:all .15s">
+              <div style="font-size:11px;font-weight:500;color:#085041">MTN MoMo</div>
+              <div style="font-size:10px;color:#1D9E75">QR Code</div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Bouton confirmer -->
+        <button class="btn-gc w-100" style="padding:12px;font-size:14px"
+                onclick="confirmerVente()">
+          Confirmer la vente
+        </button>
+        <!-- Déclenche soit une vente cash immédiate, soit un paiement mobile money avec QR code. -->
+
+        <!-- Message resultat -->
+        <div id="msg-result" style="display:none;border-radius:8px;
+             padding:10px 14px;font-size:13px;font-weight:500"></div>
+        <!-- Zone affichant le succès/échec de la vente (voir la fonction afficherMsg). -->
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Colonne droite : recu + QR Code ── -->
+  <div class="col-md-6" style="display:flex;flex-direction:column;gap:12px">
+
+    <!-- Recu de vente -->
+    <div class="gc-card">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Recu</span>
+        <span class="gc-card-sub" id="mode-label">Cash</span>
+        <!-- Affiche le mode de paiement actuellement sélectionné. -->
+      </div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:6px;
+                  font-size:12px">
+        <!-- Aperçu du reçu, mis à jour en direct par la fonction JS majRecu(). -->
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#6b6a64">Produit</span>
+          <span id="rec-produit" style="font-weight:500">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#6b6a64">Quantite</span>
+          <span id="rec-qte">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#6b6a64">Prix unitaire</span>
+          <span id="rec-prix">—</span>
+        </div>
+        <div style="border-top:1px solid #e8e8e0;margin-top:4px;padding-top:8px;
+                    display:flex;justify-content:space-between">
+          <span style="font-weight:500">Total</span>
+          <span id="rec-total" style="font-weight:500;color:#085041;font-size:14px">
+            0 FCFA
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR Code (visible seulement si Orange ou MTN) -->
+    <div class="gc-card" id="zone-qr" style="display:none">
+      <!-- Ce bloc reste caché tant que le mode de paiement est "cash" ; JavaScript
+           l'affiche uniquement pour un paiement Orange Money ou MTN MoMo. -->
+      <div class="gc-card-h">
+        <span class="gc-card-title">QR Code paiement</span>
+        <span class="gc-card-sub" id="qr-label">Orange Money</span>
+      </div>
+      <div style="padding:16px;text-align:center">
+        <div id="qr-image-zone"
+             style="width:140px;height:140px;margin:0 auto 12px;
+                    border-radius:10px;border:1px solid #e8e8e0;
+                    background:#f5f5f0;display:flex;align-items:center;
+                    justify-content:center">
+          <span style="font-size:12px;color:#9c9a92">Generation...</span>
+          <!-- Texte temporaire, remplacé par l'image du QR code dès qu'elle est générée. -->
+        </div>
+        <div style="font-size:11px;color:#6b6a64">
+          Le client scanne ce QR Code avec son telephone
+        </div>
+        <button onclick="copierLien()"
+                style="margin-top:8px;padding:5px 14px;border-radius:99px;
+                       font-size:11px;border:0.5px solid #e8e8e0;
+                       background:#fff;cursor:pointer;color:#1D9E75">
+          Copier le lien de paiement
+        </button>
+        <div id="qr-statut"></div>
+        <!-- Zone remplie dynamiquement : message d'attente et bouton "Marquer comme payée"
+             (mode démo) ou message de vérification automatique (vraie API). -->
+      </div>
+    </div>
+
+    <!-- Historique rapide -->
+    <div class="gc-card">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Ventes recentes</span>
+        <a href="{{ request.route_url('dashboard') }}"
+           style="font-size:11px;color:#1D9E75">Dashboard →</a>
+      </div>
+      <div id="historique-ventes" style="font-size:12px;color:#6b6a64;
+           padding:14px;text-align:center">
+        Enregistrez une vente pour voir l'historique
+        <!-- Rempli par ajouterHistorique() dès qu'une vente est confirmée (session courante uniquement,
+             ces données ne viennent pas de la base et disparaissent si on recharge la page). -->
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let modePaiement = 'cash';
+// Mode de paiement actuellement sélectionné (modifié par selMode()).
+let ventes_session = [];
+// Liste des ventes effectuées depuis l'ouverture de cette page (affichage "Ventes récentes").
+
+function majPrix() {
+  // Appelée quand l'utilisateur choisit un produit dans la liste déroulante.
+  const sel = document.getElementById('sel-produit');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt.value) return;
+  // Rien à faire si l'option vide "-- Choisir un produit --" est sélectionnée.
+
+  const prix  = parseFloat(opt.dataset.prix);
+  const stock = parseInt(opt.dataset.stock);
+  const unite = opt.dataset.unite || 'unite';
+
+  document.getElementById('inp-qte').max = stock;
+  // Empêche de saisir une quantité supérieure au stock disponible (limite du champ number).
+  document.getElementById('stock-info').textContent =
+    'Stock disponible : ' + stock + ' ' + unite;
+
+  majTotal();
+  majRecu();
+  // Recalcule immédiatement le total et le reçu avec ce nouveau produit.
+}
+
+function majTotal() {
+  // Recalcule le montant total affiché (prix unitaire × quantité saisie).
+  const sel   = document.getElementById('sel-produit');
+  const opt   = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+
+  const prix  = parseFloat(opt.dataset.prix) || 0;
+  const qte   = parseInt(document.getElementById('inp-qte').value) || 1;
+  const total = prix * qte;
+
+  document.getElementById('total-affiche').textContent =
+    total.toLocaleString('fr-FR') + ' FCFA';
+  // toLocaleString('fr-FR') ajoute les espaces de milliers à la française (ex: "17 500").
+
+  majRecu();
+}
+
+function majRecu() {
+  // Met à jour l'aperçu du reçu (colonne de droite) avec les valeurs actuelles du formulaire.
+  const sel  = document.getElementById('sel-produit');
+  const opt  = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+
+  const prix  = parseFloat(opt.dataset.prix) || 0;
+  const qte   = parseInt(document.getElementById('inp-qte').value) || 1;
+  const total = prix * qte;
+
+  document.getElementById('rec-produit').textContent = opt.dataset.nom || '—';
+  document.getElementById('rec-qte').textContent     = qte;
+  document.getElementById('rec-prix').textContent    =
+    prix.toLocaleString('fr-FR') + ' FCFA';
+  document.getElementById('rec-total').textContent   =
+    total.toLocaleString('fr-FR') + ' FCFA';
+}
+
+function selMode(mode) {
+  // Appelée au clic sur l'un des 3 boutons de mode de paiement (Cash/Orange/MTN).
+  modePaiement = mode;
+
+  const configs = {
+    cash:   { bg:'#E1F5EE', border:'#1D9E75', label:'Cash' },
+    orange: { bg:'#FAEEDA', border:'#EF9F27', label:'Orange Money' },
+    mtn:    { bg:'#E1F5EE', border:'#1D9E75', label:'MTN MoMo' },
+  };
+  // Couleurs et libellé associés à chaque mode de paiement.
+
+  ['cash','orange','mtn'].forEach(m => {
+    const btn = document.getElementById('btn-' + m);
+    if (m === mode) {
+      btn.style.background  = configs[m].bg;
+      btn.style.borderColor = configs[m].border;
+      // Met en surbrillance le bouton du mode choisi.
+    } else {
+      btn.style.background  = '#fff';
+      btn.style.borderColor = '#e8e8e0';
+      // Remet les autres boutons dans leur style neutre.
+    }
+  });
+
+  document.getElementById('mode-label').textContent = configs[mode].label;
+  document.getElementById('qr-label').textContent   = configs[mode].label;
+
+  clearInterval(pollTimer);
+  // Arrête toute vérification de paiement en cours pour le mode précédent.
+  document.getElementById('zone-qr').style.display = 'none';
+  // Cache le QR code (ne sera réaffiché que si une vente mobile money est démarrée).
+  document.getElementById('qr-statut').innerHTML    = '';
+}
+
+let pollTimer = null;
+// Identifiant de l'intervalle utilisé pour vérifier périodiquement le paiement mobile money.
+window._qrData = null;
+// Contient le texte brut du QR code actuellement affiché, utilisé par copierLien().
+
+function copierLien() {
+  if (window._qrData) {
+    navigator.clipboard.writeText(window._qrData)
+      .then(() => gcToast('Lien de paiement copie !'));
+    // Copie le texte du QR code dans le presse-papiers du système d'exploitation.
+  }
+}
+
+function urlVerif(reference) {
+  // Construit l'URL de vérification de paiement adaptée à l'opérateur actuellement sélectionné.
+  const tpl = modePaiement === 'mtn'
+    ? '{{ request.route_url("caisse_mtn_verif", ref_id="__REF__") }}'
+    : '{{ request.route_url("caisse_orange_verif", ref_id="__REF__") }}';
+  return tpl.replace('__REF__', reference);
+  // Remplace le faux identifiant "__REF__" par la vraie référence de la transaction.
+}
+
+async function confirmerVente() {
+  // Fonction appelée par le bouton "Confirmer la vente".
+  const sel        = document.getElementById('sel-produit');
+  const produit_id = sel.value;
+  const quantite   = document.getElementById('inp-qte').value;
+
+  if (!produit_id) {
+    afficherMsg('Veuillez choisir un produit.', 'danger');
+    return;
+  }
+  if (!quantite || quantite < 1) {
+    afficherMsg('Quantite invalide.', 'danger');
+    return;
+  }
+
+  const nomProduit = sel.options[sel.selectedIndex].dataset.nom;
+
+  if (modePaiement === 'cash') {
+    await confirmerVenteCash(produit_id, quantite, nomProduit);
+    // Paiement cash : finalisation immédiate, pas de QR code.
+  } else {
+    await demarrerPaiementMobile(produit_id, quantite, nomProduit);
+    // Paiement mobile money : affiche un QR code et attend la confirmation du paiement.
+  }
+}
+
+async function confirmerVenteCash(produit_id, quantite, nomProduit) {
+  const fd = new FormData();
+  fd.append('produit_id',    produit_id);
+  fd.append('quantite',      quantite);
+  fd.append('mode_paiement', 'cash');
+
+  try {
+    const res  = await fetch('{{ request.route_url("vente_enregistrer") }}',
+                             { method:'POST', body:fd });
+    const data = await res.json();
+    // Appelle la route vente_enregistrer (views.py), qui décrémente le stock immédiatement.
+
+    if (data.succes) {
+      traiterVenteReussie(nomProduit, quantite, data.montant, 'cash', data.alerte);
+    } else {
+      afficherMsg(data.message, 'danger');
+    }
+  } catch(e) {
+    afficherMsg('Erreur reseau. Verifiez que le serveur tourne.', 'danger');
+  }
+}
+
+async function demarrerPaiementMobile(produit_id, quantite, nomProduit) {
+  const url = modePaiement === 'mtn'
+    ? '{{ request.route_url("caisse_mtn") }}'
+    : '{{ request.route_url("caisse_orange") }}';
+
+  const fd = new FormData();
+  fd.append('produit_id', produit_id);
+  fd.append('quantite',   quantite);
+
+  try {
+    const res  = await fetch(url, { method:'POST', body:fd });
+    const data = await res.json();
+    // Crée une transaction "en_attente" côté serveur et récupère le QR code généré.
+
+    if (!data.succes) {
+      afficherMsg(data.message, 'danger');
+      return;
+    }
+
+    afficherQR(data);
+    surveillerPaiement(data.reference, nomProduit, quantite);
+    // Affiche le QR code puis commence à vérifier périodiquement si le client a payé.
+  } catch(e) {
+    afficherMsg('Erreur reseau. Verifiez que le serveur tourne.', 'danger');
+  }
+}
+
+function afficherQR(data) {
+  // Affiche l'image du QR code reçue du serveur (déjà encodée en base64, prête à l'emploi).
+  window._qrData = data.qr_data;
+
+  document.getElementById('zone-qr').style.display = 'block';
+  document.getElementById('qr-image-zone').innerHTML =
+    '<img src="' + data.qr_image + '" alt="QR Code paiement" '
+    + 'style="width:130px;height:130px;border-radius:8px">';
+
+  const zoneStatut = document.getElementById('qr-statut');
+  if (data.mode === 'demo') {
+    // Mode démo (pas de vraies clés API) : le commerçant doit confirmer manuellement.
+    zoneStatut.innerHTML =
+      '<div style="font-size:11px;color:#6b6a64;margin-top:8px">En attente du paiement du client...</div>' +
+      '<button onclick="confirmerPaiementDemo(\'' + data.reference + '\')" ' +
+      'style="margin-top:8px;padding:6px 16px;border-radius:99px;font-size:11px;' +
+      'border:none;background:#1D9E75;color:#fff;cursor:pointer">Marquer comme payee</button>';
+  } else {
+    // Vraie API configurée : la vérification se fait automatiquement en arrière-plan.
+    zoneStatut.innerHTML =
+      '<div style="font-size:11px;color:#6b6a64;margin-top:8px">Verification automatique du paiement...</div>';
+  }
+}
+
+function surveillerPaiement(reference, nomProduit, quantite) {
+  // Interroge le serveur toutes les 3 secondes pour savoir si le paiement est passé.
+  clearInterval(pollTimer);
+  // Arrête une éventuelle vérification précédente encore active.
+  pollTimer = setInterval(async () => {
+    try {
+      const res  = await fetch(urlVerif(reference));
+      const data = await res.json();
+      if (data.succes && data.statut === 'paye') {
+        clearInterval(pollTimer);
+        // Paiement confirmé : on arrête de vérifier et on finalise la vente.
+        traiterVenteReussie(nomProduit, quantite, data.montant, modePaiement, data.alerte);
+      }
+    } catch (e) { /* on reessaie au prochain cycle */ }
+  }, 3000);
+}
+
+async function confirmerPaiementDemo(reference) {
+  // Appelée par le bouton "Marquer comme payée", en mode démo uniquement.
+  try {
+    const res  = await fetch(urlVerif(reference) + '?confirmer=1');
+    // Le paramètre ?confirmer=1 force la validation manuelle côté serveur.
+    const data = await res.json();
+    if (data.succes && data.statut === 'paye') {
+      clearInterval(pollTimer);
+      const nomProduit = document.getElementById('rec-produit').textContent;
+      const quantite    = document.getElementById('rec-qte').textContent;
+      traiterVenteReussie(nomProduit, quantite, data.montant, modePaiement, data.alerte);
+    }
+  } catch (e) {
+    afficherMsg('Erreur reseau. Verifiez que le serveur tourne.', 'danger');
+  }
+}
+
+function traiterVenteReussie(nomProduit, quantite, montant, mode, alerte) {
+  // Point commun à la vente cash et à la vente mobile money confirmée : affiche le succès,
+  // ajoute la vente à l'historique de la session, et réinitialise le formulaire.
+  const msg = 'Vente enregistree : ' + montant.toLocaleString('fr-FR') + ' FCFA';
+  afficherMsg(alerte ? msg + ' — ALERTE : stock bas !' : msg, alerte ? 'alerte' : 'succes');
+  // Si cette vente a fait passer le produit sous son seuil, le message change de style/couleur.
+  gcToast('Vente enregistree !');
+
+  ajouterHistorique(nomProduit, quantite, montant, mode);
+
+  document.getElementById('sel-produit').value          = '';
+  document.getElementById('inp-qte').value               = 1;
+  document.getElementById('total-affiche').textContent   = '0 FCFA';
+  document.getElementById('stock-info').textContent      = '';
+  document.getElementById('zone-qr').style.display       = 'none';
+  document.getElementById('qr-statut').innerHTML         = '';
+  selMode('cash');
+  // Remet le formulaire à zéro, prêt pour la vente suivante.
+}
+
+function afficherMsg(texte, type) {
+  // Affiche un message coloré (succès / erreur / alerte) sous le bouton "Confirmer la vente".
+  const el = document.getElementById('msg-result');
+  el.style.display = 'block';
+  el.textContent   = texte;
+
+  const styles = {
+    succes: { bg:'#E1F5EE', color:'#085041' },
+    danger: { bg:'#FCEBEB', color:'#791F1F' },
+    alerte: { bg:'#FAEEDA', color:'#633806' },
+  };
+  const s = styles[type] || styles.danger;
+  el.style.background = s.bg;
+  el.style.color      = s.color;
+
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+  // Le message disparaît automatiquement après 5 secondes.
+}
+
+function ajouterHistorique(nom, qte, montant, mode) {
+  // Ajoute la vente en tête de la liste "Ventes récentes" affichée dans la colonne de droite.
+  ventes_session.unshift({ nom, qte, montant, mode });
+  // "unshift" ajoute l'élément au début du tableau (la vente la plus récente en haut).
+  if (ventes_session.length > 5) ventes_session.pop();
+  // Ne garde que les 5 dernières ventes de la session, retire la plus ancienne au-delà.
+
+  const modes = { cash:'Cash', orange:'Orange Money', mtn:'MTN MoMo' };
+  const html  = ventes_session.map(v =>
+    '<div style="display:flex;justify-content:space-between;' +
+    'padding:6px 0;border-bottom:0.5px solid #e8e8e0">' +
+    '<span>' + v.nom + ' x' + v.qte + '</span>' +
+    '<span style="font-weight:500;color:#085041">' +
+    v.montant.toLocaleString('fr-FR') + ' F</span>' +
+    '</div>'
+  ).join('');
+  // Construit une ligne HTML par vente, puis les assemble toutes ensemble.
+
+  document.getElementById('historique-ventes').innerHTML =
+    '<div style="padding:0 14px">' + html + '</div>';
+}
+</script>
+{% endblock %}

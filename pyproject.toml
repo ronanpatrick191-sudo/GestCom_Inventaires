@@ -1,0 +1,63 @@
+# Fichier de configuration du projet Python (norme moderne qui remplace setup.py).
+# Il dit à Python : comment construire le paquet, comment il s'appelle,
+# et de quelles bibliothèques externes il a besoin pour fonctionner.
+
+[build-system]
+# Section technique : indique l'outil utilisé pour "construire" le projet.
+requires = ["setuptools"]
+# "setuptools" est l'outil de construction utilisé (le plus classique en Python).
+build-backend = "setuptools.build_meta"
+# Point d'entrée que pip utilise pour lancer setuptools lors de l'installation.
+
+[project]
+# Métadonnées générales du projet (nom, version, description...).
+name = "GestCom"
+# Nom du paquet Python, utilisé par pip install -e .
+version = "1.0.0"
+# Numéro de version de l'application.
+description = "GestCom — Système de gestion commerciale et d'inventaires"
+# Courte description affichée par les outils Python (pip show, etc.).
+requires-python = ">=3.12"
+# Version minimale de Python nécessaire pour faire tourner le projet.
+dependencies = [
+    # Liste des bibliothèques externes installées automatiquement avec "pip install -e .".
+    "pyramid",
+    # Le framework web principal qui gère les routes (URLs) et les vues.
+    "pyramid_jinja2",
+    # Ajoute le support des templates Jinja2 (fichiers .jinja2) à Pyramid.
+    "pyramid_debugtoolbar",
+    # Barre de débogage visible en développement (utile pour voir les requêtes SQL, etc.).
+    "pyramid_tm",
+    # Gère automatiquement les transactions (commit/rollback) autour de chaque requête.
+    "pyramid_retry",
+    # Permet de réessayer automatiquement une requête si une erreur temporaire survient.
+    "SQLAlchemy>=2.0",
+    # ORM (Object-Relational Mapping) : permet de manipuler la base MySQL avec des objets Python.
+    "zope.sqlalchemy",
+    # Fait le lien entre les transactions de Pyramid (pyramid_tm) et celles de SQLAlchemy.
+    "PyMySQL",
+    # Pilote Python qui sait parler avec une base de données MySQL/MariaDB.
+    "waitress",
+    # Serveur web utilisé pour lancer l'application (pserve l'utilise en développement).
+    "requests",
+    # Bibliothèque pour envoyer des requêtes HTTP (utilisée pour appeler les API Orange/MTN).
+    "python-dotenv",
+    # Permet de lire les identifiants secrets (mots de passe, clés API) depuis un fichier .env.
+    "qrcode[pil]",
+    # Génère des QR codes (utilisé pour les paiements Orange Money / MTN MoMo).
+    "Pillow",
+    # Bibliothèque de traitement d'images, nécessaire pour dessiner les QR codes en image.
+]
+
+[project.entry-points."paste.app_factory"]
+# Déclare la "porte d'entrée" que le serveur (pserve/waitress) utilise pour démarrer l'app.
+main = "GestCom:main"
+# Signifie : "pour démarrer l'application, appelle la fonction main() du paquet GestCom"
+# (cette fonction se trouve dans GestCom/__init__.py).
+
+[tool.setuptools.packages.find]
+# Indique à setuptools où chercher le code source à empaqueter.
+where = ["."]
+# Cherche à partir du dossier racine du projet.
+include = ["GestCom*"]
+# N'inclut que les dossiers/paquets dont le nom commence par "GestCom".

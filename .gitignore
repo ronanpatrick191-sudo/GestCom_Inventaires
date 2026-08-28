@@ -1,0 +1,15 @@
+# Secrets — ne JAMAIS versionner
+.env
+
+# Environnement Python
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Éditeurs / système
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

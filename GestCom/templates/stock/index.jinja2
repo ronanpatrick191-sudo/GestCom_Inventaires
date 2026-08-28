@@ -1,0 +1,139 @@
+{% extends "base.jinja2" %}
+{% block title %}Stock{% endblock %}
+<!-- Page "Stock" : vue d'ensemble des niveaux de stock, valeur totale, et bouton d'envoi
+     d'un email groupé pour tous les produits actuellement en alerte. -->
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Stock</h5>
+    <div style="font-size:12px;color:#6b6a64">Niveaux de stock en temps réel</div>
+  </div>
+  <button class="btn-gc" id="btn-alerte-groupee" onclick="envoyerAlerteGroupee()">
+    Envoyer alerte email
+  </button>
+  <!-- Déclenche l'envoi d'un email pour chaque produit en rupture/stock bas (voir script plus bas). -->
+</div>
+
+<div class="row g-3 mb-3">
+  <!-- Trois cartes KPI résumant l'état global du stock. -->
+  <div class="col-md-4">
+    <div class="kpi-card" style="background:#E1F5EE">
+      <!-- Carte verte : valeur totale du stock (au prix d'achat) et nombre de produits référencés. -->
+      <div class="kpi-label" style="color:#085041">Valeur totale du stock</div>
+      <div class="kpi-value" style="color:#085041">{{ "{:,.0f}".format(valeur_totale) }} F</div>
+      <div class="kpi-detail" style="color:#1D9E75">{{ produits|length }} produit{{ 's' if produits|length > 1 else '' }} référencé{{ 's' if produits|length > 1 else '' }}</div>
+      <!-- "produits|length" applique le filtre Jinja "length" (équivalent de len() en Python). -->
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="kpi-card" style="background:#FCEBEB">
+      <!-- Carte rouge : nombre de produits totalement en rupture. -->
+      <div class="kpi-label" style="color:#791F1F">En rupture</div>
+      <div class="kpi-value" style="color:#791F1F">{{ nb_ruptures }} article{{ 's' if nb_ruptures > 1 else '' }}</div>
+      <div class="kpi-detail" style="color:#A32D2D">Commander en urgence</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="kpi-card" style="background:#FAEEDA">
+      <!-- Carte orange : nombre de produits en stock bas (mais pas encore épuisés). -->
+      <div class="kpi-label" style="color:#633806">Stock bas</div>
+      <div class="kpi-value" style="color:#633806">{{ nb_bas }} article{{ 's' if nb_bas > 1 else '' }}</div>
+      <div class="kpi-detail" style="color:#854F0B">Sous le seuil d'alerte</div>
+    </div>
+  </div>
+</div>
+
+<div class="gc-card">
+  <div class="gc-card-h">
+    <span class="gc-card-title">Niveaux de stock</span>
+    <span class="gc-card-sub">{{ produits|length }} article{{ 's' if produits|length > 1 else '' }}</span>
+  </div>
+
+  {% if produits %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0" style="font-size:12px">
+      <thead style="background:#f5f5f0">
+        <tr>
+          <th class="px-3">Produit</th>
+          <th class="text-end">En stock</th>
+          <th style="min-width:120px">Niveau</th>
+          <th class="text-end">Seuil min</th>
+          <th class="text-end">Valeur</th>
+          <th class="text-end px-3">Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in produits %}
+        <tr>
+          <td class="px-3" style="font-weight:500">{{ p.nom }}</td>
+          <td class="text-end">{{ p.stock }} {{ p.unite }}</td>
+          <td>
+            {% set pct = [[(p.stock / (p.seuil * 5 if p.seuil else 1)) * 100, 0]|max, 100]|min %}
+            {# Pourcentage de remplissage de la barre, borné entre 0 et 100 ;
+               "if p.seuil else 1" évite une division par zéro si le seuil est à 0. #}
+            <div style="height:5px;background:#e8e8e0;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:{{ pct }}%;border-radius:3px;
+                          background:{% if p.statut_stock() == 'ok' %}#1D9E75
+                          {% elif p.statut_stock() == 'bas' %}#EF9F27
+                          {% else %}#E24B4A{% endif %}">
+                <!-- Couleur de la barre selon le statut : vert / orange / rouge. -->
+              </div>
+            </div>
+          </td>
+          <td class="text-end" style="color:#6b6a64">{{ p.seuil }} {{ p.unite }}</td>
+          <td class="text-end">{{ "{:,.0f}".format(p.prix_achat * p.stock) }} F</td>
+          <!-- Valeur de ce produit en stock : prix d'achat unitaire × quantité restante. -->
+          <td class="text-end px-3">
+            {% if p.statut_stock() == 'ok' %}
+              <span class="badge badge-ok">OK</span>
+            {% elif p.statut_stock() == 'bas' %}
+              <span class="badge badge-bas">Bas</span>
+            {% else %}
+              <span class="badge badge-rupture">Vide</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="p-4 text-center text-muted" style="font-size:13px">Aucun produit enregistré.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function envoyerAlerteGroupee() {
+  // Appelée par le bouton "Envoyer alerte email" en haut de page.
+  const btn = document.getElementById('btn-alerte-groupee');
+  const texteInitial = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Envoi en cours...';
+  // Désactive le bouton et change son texte pendant l'envoi, pour éviter les doubles clics.
+
+  try {
+    const res  = await fetch('{{ request.route_url("stock_alerte_groupee") }}', { method: 'POST' });
+    const data = await res.json();
+    // Appelle la route stock_alerte_groupee (views.py), qui envoie un email par produit en alerte.
+
+    if (data.succes) {
+      gcToast(data.message);
+      // Affiche le nombre d'emails envoyés avec succès.
+    } else {
+      alert('Erreur : ' + data.message);
+    }
+  } catch (e) {
+    alert('Erreur réseau. Vérifiez que le serveur tourne.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = texteInitial;
+    // Réactive le bouton dans tous les cas, succès ou échec.
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends "base.jinja2" %}
+{% block title %}Rapport{% endblock %}
+<!-- Page "Rapport" : chiffre d'affaires, profit net et tendance sur les 6 derniers mois. -->
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Rapport financier</h5>
+    <div style="font-size:12px;color:#6b6a64">{{ mois_courant }}</div>
+    <!-- Affiche par exemple "Août 2026", calculé dans views.py. -->
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- Quatre cartes KPI résumant les chiffres clés du mois en cours. -->
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#E1F5EE">
+      <!-- Carte verte : chiffre d'affaires total du mois. -->
+      <div class="kpi-label" style="color:#085041">CA ce mois</div>
+      <div class="kpi-value" style="color:#085041">{{ "{:,.0f}".format(ca_mois) }} F</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#EEEDFE">
+      <!-- Carte violette : profit net (CA moins coût des produits vendus). -->
+      <div class="kpi-label" style="color:#3C3489">Profit net</div>
+      <div class="kpi-value" style="color:#3C3489">{{ "{:,.0f}".format(profit_mois) }} F</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#EAF3DE">
+      <!-- Carte verte claire : nombre total d'articles vendus ce mois-ci. -->
+      <div class="kpi-label" style="color:#27500A">Articles vendus</div>
+      <div class="kpi-value" style="color:#27500A">{{ nb_articles_mois }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#FAEEDA">
+      <!-- Carte orange : ce que les articles vendus ont coûté à l'achat. -->
+      <div class="kpi-label" style="color:#633806">Coût des produits vendus</div>
+      <div class="kpi-value" style="color:#633806">{{ "{:,.0f}".format(cout_vendu_mois) }} F</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <div class="col-md-8">
+    <!-- Colonne large : graphique en barres comparant CA et profit sur 6 mois. -->
+    <div class="gc-card">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Évolution mensuelle — CA &amp; Profit</span>
+        <!-- "&amp;" est l'écriture HTML du caractère "&". -->
+      </div>
+      <div class="p-3">
+        <canvas id="chartRapport" height="140"></canvas>
+        <!-- Zone de dessin où Chart.js va tracer le graphique (voir le script en bas). -->
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <!-- Colonne étroite : tableau des produits les plus vendus ce mois-ci. -->
+    <div class="gc-card h-100">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Top produits du mois</span>
+      </div>
+      {% if top_produits_mois %}
+        <table class="table table-sm mb-0" style="font-size:12px">
+          <thead style="background:#f5f5f0">
+            <tr><th class="px-3">Produit</th><th class="px-2 text-end">FCFA</th></tr>
+          </thead>
+          <tbody>
+            {% for p in top_produits_mois %}
+            <tr>
+              <td class="px-3">{{ p.nom }}</td>
+              <td class="px-2 text-end" style="color:#27500A;font-weight:500">
+                {{ "{:,.0f}".format(p.total_fcfa) }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="p-3 text-muted" style="font-size:12px">Aucune vente ce mois-ci.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+new Chart(document.getElementById('chartRapport'), {
+  // Graphique en barres à deux séries : chiffre d'affaires et profit, mois par mois.
+  type: 'bar',
+  data: {
+    labels: {{ labels_mois|tojson }},
+    // Liste des 6 derniers mois (abréviations), transmise par views.py.
+    datasets: [
+      { label: 'CA mensuel', data: {{ ca_mensuel|tojson }}, backgroundColor: '#1D9E75', borderRadius: 4, barPercentage: 0.5 },
+      // Première série de barres (vertes) : le chiffre d'affaires de chaque mois.
+      { label: 'Profit net', data: {{ profit_mensuel|tojson }}, backgroundColor: '#534AB7', borderRadius: 4, barPercentage: 0.5 }
+      // Deuxième série de barres (violettes) : le profit net de chaque mois.
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: true, labels: { font: { size: 11 } } } },
+    // Contrairement au graphique du dashboard, la légende est ici affichée (2 séries à distinguer).
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+      y: {
+        border: { display: false },
+        ticks: {
+          font: { size: 10 },
+          callback: v => (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) + ' F'
+          // Abrège les grands nombres sur l'axe vertical (ex: 250000 → "250k F").
+        }
+      }
+    }
+  }
+});
+</script>
+{% endblock %}

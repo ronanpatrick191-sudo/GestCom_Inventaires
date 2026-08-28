@@ -1,0 +1,307 @@
+{% extends "base.jinja2" %}
+{% block title %}Alertes{% endblock %}
+<!-- Page "Alertes" : liste des ruptures/stocks bas non lus, groupées par gravité,
+     plus un panneau de configuration/test des emails automatiques. -->
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Alertes de stock</h5>
+    <div style="font-size:12px;color:#6b6a64" id="alertes-compteur">
+      {% if nb_alertes > 0 %}
+        {{ nb_alertes }} alerte{{ 's' if nb_alertes > 1 else '' }} non lue{{ 's' if nb_alertes > 1 else '' }}
+      {% else %}
+        Aucune alerte en cours
+      {% endif %}
+    </div>
+  </div>
+  <button class="btn-gc" id="btn-tout-marquer" onclick="toutMarquerLues()"
+          {% if nb_alertes == 0 %}style="display:none"{% endif %}>
+    <!-- Bouton caché s'il n'y a déjà aucune alerte à marquer comme lue. -->
+    Tout marquer comme lu
+  </button>
+</div>
+
+{# Le conteneur entier est caché si la liste d'alertes est vide (le bloc "alertes-vide" prend le relais). #}
+<div id="alertes-liste" {% if not alertes %}style="display:none"{% endif %}>
+{% if alertes %}
+
+  <!-- ── Alertes rupture ── -->
+  {% set ruptures = alertes | selectattr('type_alerte', 'equalto', 'rupture') | list %}
+  {# Filtre la liste complète pour ne garder que les alertes de type "rupture". #}
+  {% if ruptures %}
+  <div class="mb-3">
+    <div style="font-size:12px;font-weight:500;color:#791F1F;margin-bottom:8px;
+                display:flex;align-items:center;gap:6px">
+      <span style="width:8px;height:8px;border-radius:50%;
+                   background:#E24B4A;display:inline-block"></span>
+      <!-- Petit point rouge décoratif devant le titre de section. -->
+      Ruptures de stock ({{ ruptures|length }})
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      {% for a in ruptures %}
+      <div id="alerte-{{ a.id }}"
+           style="background:#FCEBEB;border:0.5px solid #F09595;
+                  border-radius:10px;padding:12px 16px;
+                  display:flex;align-items:center;justify-content:space-between">
+        <!-- L'attribut id (construit à partir de l'identifiant de l'alerte) permet au
+             JavaScript de retrouver et supprimer cette carte quand l'alerte est marquée comme lue. -->
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+               style="flex-shrink:0;margin-top:1px">
+            <!-- Icône en forme de point d'exclamation dans un cercle. -->
+            <circle cx="8" cy="8" r="6" stroke="#A32D2D" stroke-width="1.3"/>
+            <path d="M8 5v3M8 10.5v.5" stroke="#A32D2D"
+                  stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <div style="font-size:13px;font-weight:500;color:#791F1F">
+              {{ a.message }}
+            </div>
+            <div style="font-size:11px;color:#A32D2D;margin-top:2px">
+              {{ a.date_formatee() }}
+              <!-- Appelle la méthode date_formatee() du modèle Alerte (models.py). -->
+            </div>
+          </div>
+        </div>
+        <button onclick="marquerLue({{ a.id }})"
+                style="padding:5px 12px;border-radius:99px;font-size:11px;
+                       border:0.5px solid #F09595;background:#fff;
+                       cursor:pointer;color:#791F1F;white-space:nowrap;
+                       flex-shrink:0;margin-left:12px">
+          Marquer lue
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Alertes stock bas ── -->
+  {% set bas = alertes | selectattr('type_alerte', 'equalto', 'seuil_bas') | list %}
+  {# Filtre la même liste pour ne garder que les alertes de type "seuil_bas" (moins graves). #}
+  {% if bas %}
+  <div class="mb-3">
+    <div style="font-size:12px;font-weight:500;color:#633806;margin-bottom:8px;
+                display:flex;align-items:center;gap:6px">
+      <span style="width:8px;height:8px;border-radius:50%;
+                   background:#EF9F27;display:inline-block"></span>
+      Stock bas ({{ bas|length }})
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      {% for a in bas %}
+      <div id="alerte-{{ a.id }}"
+           style="background:#FAEEDA;border:0.5px solid #FAC775;
+                  border-radius:10px;padding:12px 16px;
+                  display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+               style="flex-shrink:0;margin-top:1px">
+            <!-- Icône en forme de triangle d'avertissement. -->
+            <path d="M8 2L14 13H2L8 2Z" stroke="#854F0B"
+                  stroke-width="1.3" stroke-linejoin="round"/>
+            <path d="M8 7v3M8 11.5v.5" stroke="#854F0B"
+                  stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <div style="font-size:13px;font-weight:500;color:#633806">
+              {{ a.message }}
+            </div>
+            <div style="font-size:11px;color:#854F0B;margin-top:2px">
+              {{ a.date_formatee() }}
+            </div>
+          </div>
+        </div>
+        <button onclick="marquerLue({{ a.id }})"
+                style="padding:5px 12px;border-radius:99px;font-size:11px;
+                       border:0.5px solid #FAC775;background:#fff;
+                       cursor:pointer;color:#633806;white-space:nowrap;
+                       flex-shrink:0;margin-left:12px">
+          Marquer lue
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+</div>
+
+<!-- ── Aucune alerte ── -->
+{# Ce bloc n'est visible que si la liste d'alertes est vide (voir style="display:none" conditionnel). #}
+<div id="alertes-vide" class="gc-card"
+     style="text-align:center;padding:40px 20px;{% if alertes %}display:none{% endif %}">
+  <svg width="40" height="40" viewBox="0 0 40 40" fill="none"
+       style="margin:0 auto 12px">
+    <!-- Icône en forme de coche dans un cercle, symbole "tout va bien". -->
+    <circle cx="20" cy="20" r="18" stroke="#EAF3DE" stroke-width="2"/>
+    <path d="M13 20l5 5 9-9" stroke="#1D9E75"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div style="font-size:14px;font-weight:500;color:#085041;margin-bottom:6px">
+    Tout est en ordre
+  </div>
+  <div style="font-size:12px;color:#6b6a64">
+    Aucune rupture de stock detectee. GestCom surveille automatiquement.
+  </div>
+  <a href="{{ request.route_url('inventaire') }}"
+     style="display:inline-block;margin-top:14px;font-size:12px;color:#1D9E75">
+    Voir l'inventaire →
+  </a>
+</div>
+
+<!-- ── Configuration email ── -->
+<div class="gc-card mt-3">
+  <div class="gc-card-h">
+    <span class="gc-card-title">Alertes email automatiques</span>
+    <span class="gc-card-sub">
+      {% if smtp_configure %}SMTP configuré{% else %}SMTP non configuré{% endif %}
+      <!-- Reflète directement le résultat du calcul "smtp_configure" fait dans views.py. -->
+    </span>
+  </div>
+  <div style="padding:14px;display:flex;flex-direction:column;gap:10px;font-size:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="color:#6b6a64">Email du gérant</span>
+      <span style="font-weight:500;color:var(--gc-vert)">
+        {{ smtp_dest if smtp_dest else 'Non défini (.env)' }}
+      </span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="color:#6b6a64">Alerte rupture de stock</span>
+      {% if smtp_configure %}
+        <span style="background:#E1F5EE;color:#085041;padding:2px 8px;
+                     border-radius:99px;font-size:10px;font-weight:500">
+          Active
+        </span>
+      {% else %}
+        <span style="background:#FCEBEB;color:#791F1F;padding:2px 8px;
+                     border-radius:99px;font-size:10px;font-weight:500">
+          Inactive
+        </span>
+      {% endif %}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="color:#6b6a64">Alerte stock bas (sous seuil)</span>
+      {% if smtp_configure %}
+        <span style="background:#E1F5EE;color:#085041;padding:2px 8px;
+                     border-radius:99px;font-size:10px;font-weight:500">
+          Active
+        </span>
+      {% else %}
+        <span style="background:#FCEBEB;color:#791F1F;padding:2px 8px;
+                     border-radius:99px;font-size:10px;font-weight:500">
+          Inactive
+        </span>
+      {% endif %}
+    </div>
+    {% if not smtp_configure %}
+    {# N'affiche cet avertissement que si les identifiants SMTP manquent. #}
+    <div style="font-size:11px;color:#854F0B;background:#FAEEDA;padding:8px 10px;
+                border-radius:8px">
+      SMTP_USER / SMTP_PASSWORD manquants dans le fichier .env — les emails
+      automatiques ne peuvent pas être envoyés.
+    </div>
+    {% endif %}
+    <button id="btn-tester-email" onclick="testerEmail()"
+            style="align-self:flex-start;padding:7px 16px;border-radius:8px;
+                   background:#1D9E75;color:#fff;border:none;font-size:12px;
+                   cursor:pointer;font-weight:500;margin-top:4px">
+      Envoyer un email de test
+    </button>
+    <!-- Déclenche l'envoi réel d'un email de démonstration via SMTP (voir script plus bas). -->
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const URL_ALERTE_EMAIL_TEST = '{{ request.route_url("alerte_email_test") }}';
+// URL de la route qui envoie l'email de test (views.py : alerte_email_test).
+
+function recalculerCompteurAlertes() {
+  // Recompte les cartes d'alerte encore présentes dans la page, et met à jour l'affichage en conséquence.
+  const restantes = document.querySelectorAll('[id^="alerte-"]').length;
+  // Sélectionne tous les éléments dont l'id commence par "alerte-" (une carte par alerte).
+
+  document.getElementById('alertes-compteur').textContent = restantes > 0
+    ? restantes + ' alerte' + (restantes > 1 ? 's' : '') + ' non lue' + (restantes > 1 ? 's' : '')
+    : 'Aucune alerte en cours';
+
+  document.getElementById('btn-tout-marquer').style.display = restantes > 0 ? '' : 'none';
+  document.getElementById('alertes-liste').style.display    = restantes > 0 ? '' : 'none';
+  document.getElementById('alertes-vide').style.display     = restantes > 0 ? 'none' : '';
+  // Bascule entre la liste d'alertes et le message "Tout est en ordre" selon ce qu'il reste.
+}
+
+async function marquerLue(id) {
+  // Marque une alerte précise comme lue (bouton "Marquer lue" sur une carte individuelle).
+  const fd  = new FormData();
+  const res = await fetch('/alertes/lire/' + id, { method: 'POST', body: fd });
+  // Appelle directement l'URL de la route alerte_lire (équivalent à request.route_url ici codé en dur).
+  const data = await res.json();
+
+  if (data.succes) {
+    const el = document.getElementById('alerte-' + id);
+    if (el) {
+      el.style.opacity = '0';
+      el.style.transition = 'opacity .3s';
+      // Fait disparaître la carte en fondu (animation de 0,3 seconde)...
+      setTimeout(() => {
+        el.remove();
+        recalculerCompteurAlertes();
+        // ...puis la retire réellement du HTML une fois l'animation terminée.
+      }, 300);
+    }
+    gcToast('Alerte marquée comme lue');
+  } else {
+    alert('Erreur : ' + data.message);
+  }
+}
+
+async function toutMarquerLues() {
+  // Marque toutes les alertes visibles comme lues d'un seul coup (bouton "Tout marquer comme lu").
+  const alertes = document.querySelectorAll('[id^="alerte-"]');
+  for (const el of alertes) {
+    const id = el.id.replace('alerte-', '');
+    // Extrait le numéro d'alerte à partir de l'id de l'élément (ex: "alerte-12" → "12").
+    const fd = new FormData();
+    await fetch('/alertes/lire/' + id, { method: 'POST', body: fd });
+    // Envoie une requête de marquage pour chaque alerte, l'une après l'autre.
+    el.style.opacity = '0';
+    el.style.transition = 'opacity .2s';
+  }
+  setTimeout(() => {
+    alertes.forEach(el => el.remove());
+    recalculerCompteurAlertes();
+  }, 200);
+  gcToast('Toutes les alertes marquées comme lues');
+}
+
+async function testerEmail() {
+  // Envoie un vrai email de test pour vérifier que la configuration SMTP fonctionne.
+  const btn = document.getElementById('btn-tester-email');
+  const texteInitial = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Envoi en cours...';
+
+  try {
+    const res  = await fetch(URL_ALERTE_EMAIL_TEST, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.succes) {
+      gcToast(data.message);
+    } else {
+      alert('Erreur : ' + data.message);
+    }
+  } catch (e) {
+    alert('Erreur réseau. Vérifiez que le serveur tourne.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = texteInitial;
+  }
+}
+</script>
+{% endblock %}

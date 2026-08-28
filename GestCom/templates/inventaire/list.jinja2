@@ -1,0 +1,453 @@
+{% extends "base.jinja2" %}
+{% block title %}Inventaire{% endblock %}
+<!-- Page "Produits" : catalogue complet avec ajout/modification/suppression (CRUD),
+     sans recharger la page (tout se fait en JavaScript via des appels fetch()). -->
+
+{% block content %}
+
+<!-- ── En-tête ── -->
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Inventaire</h5>
+    <div style="font-size:12px;color:#6b6a64" id="inv-compteur-header">
+      {{ nb_produits }} produit{{ 's' if nb_produits > 1 else '' }} · {{ nb_ruptures }} en alerte
+      <!-- Ce texte est recalculé par JavaScript après chaque ajout/suppression (recalculerCompteurs()). -->
+    </div>
+  </div>
+  <button class="btn-gc" onclick="ouvrirFormulaire()">+ Ajouter produit</button>
+  <!-- Ouvre le formulaire ci-dessous en mode "ajout" (voir la fonction JS ouvrirFormulaire). -->
+</div>
+
+<!-- ── Formulaire ajout / édition (caché par défaut) ── -->
+<div id="form-ajout" class="gc-card mb-4" style="display:none">
+  <!-- Un seul et même formulaire sert à la fois pour ajouter un nouveau produit et pour
+       en modifier un existant ; son contenu est rempli dynamiquement par JavaScript. -->
+  <div class="gc-card-h">
+    <span class="gc-card-title" id="form-titre">Nouveau produit</span>
+    <span style="font-size:12px;color:#9c9a92;cursor:pointer"
+          onclick="fermerFormulaire()">✕ Fermer</span>
+  </div>
+  <div class="p-3">
+    <div class="row g-3">
+      <input type="hidden" id="f-id" value="">
+      <!-- Champ invisible : contient l'ID du produit en cours d'édition (vide = mode ajout). -->
+      <div class="col-md-4">
+        <label style="font-size:12px;color:#6b6a64">Nom du produit *</label>
+        <input type="text" id="f-nom" class="form-control form-control-sm mt-1"
+               placeholder="ex: Riz importé 25kg">
+      </div>
+      <div class="col-md-2">
+        <label style="font-size:12px;color:#6b6a64">Catégorie</label>
+        <input type="text" id="f-cat" class="form-control form-control-sm mt-1"
+               placeholder="ex: Alimentation">
+      </div>
+      <div class="col-md-2">
+        <label style="font-size:12px;color:#6b6a64">Prix achat (FCFA) *</label>
+        <input type="number" id="f-achat" class="form-control form-control-sm mt-1"
+               placeholder="13000">
+      </div>
+      <div class="col-md-2">
+        <label style="font-size:12px;color:#6b6a64">Prix vente (FCFA) *</label>
+        <input type="number" id="f-vente" class="form-control form-control-sm mt-1"
+               placeholder="17500">
+      </div>
+      <div class="col-md-1">
+        <label style="font-size:12px;color:#6b6a64">Stock</label>
+        <input type="number" id="f-stock" class="form-control form-control-sm mt-1"
+               value="0">
+      </div>
+      <div class="col-md-1">
+        <label style="font-size:12px;color:#6b6a64">Seuil alerte</label>
+        <input type="number" id="f-seuil" class="form-control form-control-sm mt-1"
+               value="10">
+      </div>
+      <div class="col-12">
+        <button class="btn-gc" id="btn-enregistrer" onclick="enregistrerProduit()">
+          Enregistrer le produit
+        </button>
+        <!-- Le texte du bouton change entre "Enregistrer le produit" (ajout) et
+             "Enregistrer les modifications" (édition), voir le JavaScript plus bas. -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Liste des produits ── -->
+<div class="gc-card">
+  <div class="gc-card-h">
+    <span class="gc-card-title">Liste des produits</span>
+    <span class="gc-card-sub" id="inv-compteur-sub">{{ nb_produits }} article{{ 's' if nb_produits > 1 else '' }}</span>
+  </div>
+
+  {# La table entière est cachée s'il n'y a aucun produit (le bloc "inv-vide" prend le relais). #}
+  <div id="inv-table-wrap" {% if not produits %}style="display:none"{% endif %}>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0" id="tableau-produits" style="font-size:12px">
+      <thead style="background:#f5f5f0">
+        <tr>
+          <th class="px-3">Produit</th>
+          <th>Catégorie</th>
+          <th class="text-end">Stock</th>
+          <th>Niveau</th>
+          <th class="text-end">Prix achat</th>
+          <th class="text-end">Prix vente</th>
+          <th class="text-end">Marge</th>
+          <th class="text-end px-3">Statut</th>
+          <th class="text-end px-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in produits %}
+        {# Chaque ligne <tr> stocke toutes les données du produit dans des attributs
+           "data-*" : c'est ce que le JavaScript relit pour modifier/rafraîchir la ligne
+           sans devoir recharger la page depuis le serveur. #}
+        <tr id="row-produit-{{ p.id }}"
+            data-id="{{ p.id }}"
+            data-nom="{{ p.nom }}"
+            data-categorie="{{ p.categorie or '' }}"
+            data-prix-achat="{{ p.prix_achat }}"
+            data-prix-vente="{{ p.prix_vente }}"
+            data-stock="{{ p.stock }}"
+            data-seuil="{{ p.seuil }}"
+            data-unite="{{ p.unite }}">
+          <td class="td-nom px-3" style="font-weight:500">{{ p.nom }}</td>
+          <td class="td-cat" style="color:#6b6a64">{{ p.categorie or '—' }}</td>
+          <td class="td-stock text-end">{{ p.stock }} {{ p.unite }}</td>
+          <td class="td-niveau" style="min-width:100px">
+            <div style="height:5px;background:#e8e8e0;border-radius:3px;overflow:hidden">
+              {% set pct = [[(p.stock / (p.seuil * 5)) * 100, 0]|max, 100]|min %}
+              {# Calcule un pourcentage de remplissage de la barre : le stock est comparé
+                 à 5 fois le seuil d'alerte, borné entre 0 et 100 pour ne jamais déborder. #}
+              <div style="height:100%;width:{{ pct }}%;border-radius:3px;
+                          background:{% if p.statut_stock() == 'ok' %}#1D9E75
+                          {% elif p.statut_stock() == 'bas' %}#EF9F27
+                          {% else %}#E24B4A{% endif %}">
+                <!-- Couleur de la barre : vert (ok), orange (bas) ou rouge (rupture). -->
+              </div>
+            </div>
+          </td>
+          <td class="td-achat text-end" style="color:#6b6a64">
+            {{ "{:,.0f}".format(p.prix_achat) }} F
+          </td>
+          <td class="td-vente text-end" style="font-weight:500">
+            {{ "{:,.0f}".format(p.prix_vente) }} F
+          </td>
+          <td class="td-marge text-end" style="color:#27500A">{{ p.marge_pct() }}%</td>
+          <!-- Appelle la méthode marge_pct() du modèle Produit (models.py). -->
+          <td class="td-statut text-end px-3">
+            {% if p.statut_stock() == 'ok' %}
+              <span class="badge badge-ok">OK</span>
+            {% elif p.statut_stock() == 'bas' %}
+              <span class="badge badge-bas">Stock bas</span>
+            {% else %}
+              <span class="badge badge-rupture">Rupture</span>
+            {% endif %}
+          </td>
+          <td class="td-actions text-end px-3" style="white-space:nowrap">
+            <span class="lien-modifier" style="font-size:11px;color:#1D9E75;cursor:pointer">
+              Modifier
+            </span>
+            <!-- Clic géré en JavaScript (attacherLigne), pas de lien href classique. -->
+            <span class="lien-supprimer" style="font-size:11px;color:#791F1F;cursor:pointer;margin-left:10px">
+              Supprimer
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </div>
+
+  {# Message affiché à la place du tableau quand il n'y a aucun produit (masqué sinon). #}
+  <div id="inv-vide" class="p-4 text-center" {% if produits %}style="display:none"{% endif %}>
+    <p style="font-size:13px;color:#6b6a64;margin-bottom:12px">
+      Aucun produit enregistré.
+    </p>
+    <button class="btn-gc" onclick="ouvrirFormulaire()">
+      Ajouter le premier produit
+    </button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Modèles d'URL contenant un faux identifiant "__ID__" qu'on remplace par le vrai ID
+// au moment de l'appel (évite de reconstruire l'URL à la main à chaque fois).
+const URL_MODIFIER_TPL  = '{{ request.route_url("produit_modifier", id="__ID__") }}';
+const URL_SUPPRIMER_TPL = '{{ request.route_url("produit_supprimer", id="__ID__") }}';
+const URL_AJOUTER       = '{{ request.route_url("produit_ajouter") }}';
+
+let ligneEnEdition = null;   // <tr> en cours de modification, ou null si mode "ajout"
+
+// ── Calculs miroir du modèle Produit (models.py) côté client ──
+// Ces fonctions reproduisent en JavaScript la même logique que Produit.statut_stock()
+// et Produit.marge_pct() en Python, pour pouvoir mettre à jour l'affichage instantanément
+// sans redemander la page complète au serveur.
+function statutStock(stock, seuil) {
+  if (stock === 0)   return 'rupture';
+  if (stock <= seuil) return 'bas';
+  return 'ok';
+}
+
+function margePct(achat, vente) {
+  if (!vente) return 0;
+  // Évite une division par zéro si le prix de vente n'est pas encore renseigné.
+  return Math.round((vente - achat) / vente * 100);
+}
+
+function formatFCFA(n) {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  // Insère une virgule tous les 3 chiffres (ex: 17500 → "17,500"), équivalent JS du "{:,.0f}" Python.
+}
+
+// ── Rendu d'une ligne à partir de ses data-attributes ──
+function rafraichirLigne(tr) {
+  // Redessine entièrement le contenu d'une ligne <tr> à partir des données stockées dedans.
+  const nom       = tr.dataset.nom;
+  const categorie = tr.dataset.categorie;
+  const achat     = parseFloat(tr.dataset.prixAchat) || 0;
+  const vente     = parseFloat(tr.dataset.prixVente) || 0;
+  const stock     = parseInt(tr.dataset.stock, 10) || 0;
+  const seuil     = parseInt(tr.dataset.seuil, 10) || 0;
+  const unite     = tr.dataset.unite || '';
+  // "tr.dataset.prixAchat" lit l'attribut HTML "data-prix-achat" (conversion automatique
+  // du tiret vers la casse "camelCase" par le navigateur).
+
+  const statut = statutStock(stock, seuil);
+  const pct    = Math.min(Math.max((stock / (seuil * 5 || 1)) * 100, 0), 100);
+  // Même calcul de pourcentage que côté serveur (Jinja), pour garder la barre cohérente.
+  const couleurs = { ok: '#1D9E75', bas: '#EF9F27', rupture: '#E24B4A' };
+  const badges   = {
+    ok:      ['badge-ok', 'OK'],
+    bas:     ['badge-bas', 'Stock bas'],
+    rupture: ['badge-rupture', 'Rupture'],
+  };
+  const [classeBadge, libelleBadge] = badges[statut];
+  // Décompose le tableau [classe, texte] correspondant au statut en deux variables séparées.
+
+  tr.querySelector('.td-nom').textContent   = nom;
+  tr.querySelector('.td-cat').textContent   = categorie || '—';
+  tr.querySelector('.td-stock').textContent = stock + ' ' + unite;
+  tr.querySelector('.td-niveau').innerHTML  =
+    '<div style="height:5px;background:#e8e8e0;border-radius:3px;overflow:hidden">' +
+    '<div style="height:100%;width:' + pct + '%;border-radius:3px;background:' +
+    couleurs[statut] + '"></div></div>';
+  // Reconstruit la barre de niveau de stock en HTML, avec la bonne largeur et couleur.
+  tr.querySelector('.td-achat').textContent = formatFCFA(achat) + ' F';
+  tr.querySelector('.td-vente').textContent = formatFCFA(vente) + ' F';
+  tr.querySelector('.td-marge').textContent = margePct(achat, vente) + '%';
+  tr.querySelector('.td-statut').innerHTML  =
+    '<span class="badge ' + classeBadge + '">' + libelleBadge + '</span>';
+}
+
+// ── Compteurs d'en-tête (nombre de produits / alertes) ──
+function recalculerCompteurs() {
+  // Recompte tout à partir des lignes réellement présentes dans le tableau (source de vérité),
+  // pour que les compteurs restent justes après chaque ajout/modification/suppression.
+  const lignes = document.querySelectorAll('#tableau-produits tbody tr');
+  const total  = lignes.length;
+  let ruptures = 0;
+  lignes.forEach(tr => {
+    const stock = parseInt(tr.dataset.stock, 10) || 0;
+    const seuil = parseInt(tr.dataset.seuil, 10) || 0;
+    if (stock <= seuil) ruptures++;
+  });
+
+  document.getElementById('inv-compteur-header').textContent =
+    total + ' produit' + (total > 1 ? 's' : '') + ' · ' + ruptures + ' en alerte';
+  document.getElementById('inv-compteur-sub').textContent =
+    total + ' article' + (total > 1 ? 's' : '');
+
+  document.getElementById('inv-table-wrap').style.display = total > 0 ? '' : 'none';
+  document.getElementById('inv-vide').style.display        = total > 0 ? 'none' : '';
+  // Bascule entre le tableau et le message "Aucun produit enregistré" selon le nombre de lignes.
+}
+
+// ── Attache les actions Modifier / Supprimer à une ligne ──
+function attacherLigne(tr) {
+  tr.querySelector('.lien-modifier').onclick  = () => ouvrirEdition(tr);
+  tr.querySelector('.lien-supprimer').onclick = () => supprimerProduit(tr);
+}
+
+document.querySelectorAll('#tableau-produits tbody tr').forEach(attacherLigne);
+// Attache les clics sur toutes les lignes déjà présentes au chargement de la page.
+
+// ── Formulaire ──
+function ouvrirFormulaire() {
+  // Réinitialise et affiche le formulaire en mode "ajout d'un nouveau produit".
+  ligneEnEdition = null;
+  document.getElementById('f-id').value = '';
+  document.getElementById('form-titre').textContent = 'Nouveau produit';
+  document.getElementById('btn-enregistrer').textContent = 'Enregistrer le produit';
+  ['f-nom','f-cat','f-achat','f-vente'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-stock').value = '0';
+  document.getElementById('f-seuil').value = '10';
+  document.getElementById('form-ajout').style.display = 'block';
+  document.getElementById('f-nom').focus();
+  // Place le curseur directement dans le champ "nom" pour que l'utilisateur puisse taper.
+}
+
+function ouvrirEdition(tr) {
+  // Pré-remplit le formulaire avec les valeurs actuelles de la ligne, en mode "édition".
+  ligneEnEdition = tr;
+  document.getElementById('f-id').value     = tr.dataset.id;
+  document.getElementById('f-nom').value    = tr.dataset.nom;
+  document.getElementById('f-cat').value    = tr.dataset.categorie;
+  document.getElementById('f-achat').value  = tr.dataset.prixAchat;
+  document.getElementById('f-vente').value  = tr.dataset.prixVente;
+  document.getElementById('f-stock').value  = tr.dataset.stock;
+  document.getElementById('f-seuil').value  = tr.dataset.seuil;
+  document.getElementById('form-titre').textContent = 'Modifier ' + tr.dataset.nom;
+  document.getElementById('btn-enregistrer').textContent = 'Enregistrer les modifications';
+  document.getElementById('form-ajout').style.display = 'block';
+  document.getElementById('form-ajout').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Fait défiler la page en douceur pour amener le formulaire à l'écran.
+  document.getElementById('f-nom').focus();
+}
+
+function fermerFormulaire() {
+  document.getElementById('form-ajout').style.display = 'none';
+  ligneEnEdition = null;
+}
+
+async function enregistrerProduit() {
+  // Fonction appelée par le bouton "Enregistrer" ; gère à la fois l'ajout et la modification.
+  const id         = document.getElementById('f-id').value;
+  const nom        = document.getElementById('f-nom').value.trim();
+  const categorie  = document.getElementById('f-cat').value.trim();
+  const prixAchat  = document.getElementById('f-achat').value || '0';
+  const prixVente  = document.getElementById('f-vente').value;
+  const stock      = document.getElementById('f-stock').value || '0';
+  const seuil      = document.getElementById('f-seuil').value || '10';
+
+  if (!nom || !prixVente) {
+    // Vérification minimale côté client, avant même d'appeler le serveur.
+    alert('Le nom et le prix de vente sont obligatoires.');
+    return;
+  }
+
+  // Confirmation explicite avant toute modification d'un produit existant
+  if (id && !confirm('Voulez-vous vraiment modifier "' + nom + '" ?')) {
+    return;
+  }
+
+  const fd = new FormData();
+  // FormData construit les données au même format qu'un formulaire HTML classique (POST).
+  fd.append('nom',        nom);
+  fd.append('categorie',  categorie);
+  fd.append('prix_achat', prixAchat);
+  fd.append('prix_vente', prixVente);
+  fd.append('stock',      stock);
+  fd.append('seuil',      seuil);
+
+  const url = id ? URL_MODIFIER_TPL.replace('__ID__', id) : URL_AJOUTER;
+  // Choisit l'URL de modification (si un ID existe) ou d'ajout (sinon).
+
+  let data;
+  try {
+    const res = await fetch(url, { method: 'POST', body: fd });
+    data = await res.json();
+    // Envoie la requête au serveur (views.py) et attend la réponse JSON.
+  } catch (e) {
+    alert('Erreur réseau. Vérifiez que le serveur tourne.');
+    return;
+  }
+
+  if (!data.succes) {
+    // Le serveur a renvoyé une erreur métier (ex: nom vide, prix invalide).
+    alert('Erreur : ' + data.message);
+    return;
+  }
+
+  if (id && ligneEnEdition) {
+    // Mise à jour instantanée de la ligne, sans recharger la page
+    ligneEnEdition.dataset.nom        = nom;
+    ligneEnEdition.dataset.categorie  = categorie;
+    ligneEnEdition.dataset.prixAchat  = prixAchat;
+    ligneEnEdition.dataset.prixVente  = prixVente;
+    ligneEnEdition.dataset.stock      = stock;
+    ligneEnEdition.dataset.seuil      = seuil;
+    rafraichirLigne(ligneEnEdition);
+  } else {
+    // Mode ajout : construit une toute nouvelle ligne dans le tableau.
+    ajouterLigneDOM(data.id, {
+      nom, categorie, achat: prixAchat, vente: prixVente,
+      stock, seuil, unite: 'unité',
+    });
+  }
+
+  recalculerCompteurs();
+  gcToast(data.message);
+  // gcToast() est définie dans base.jinja2 : affiche le message de confirmation du serveur.
+  fermerFormulaire();
+}
+
+function ajouterLigneDOM(id, v) {
+  // Crée dynamiquement une nouvelle ligne <tr> dans le tableau, sans recharger la page.
+  const tbody = document.querySelector('#tableau-produits tbody');
+  if (!tbody) { location.reload(); return; }
+  // Sécurité : si le tableau n'existe pas encore (cas "aucun produit" au départ),
+  // on recharge simplement la page plutôt que de gérer ce cas particulier en JS.
+
+  const tr = document.createElement('tr');
+  tr.id = 'row-produit-' + id;
+  tr.dataset.id        = id;
+  tr.dataset.nom       = v.nom;
+  tr.dataset.categorie = v.categorie;
+  tr.dataset.prixAchat = v.achat;
+  tr.dataset.prixVente = v.vente;
+  tr.dataset.stock     = v.stock;
+  tr.dataset.seuil     = v.seuil;
+  tr.dataset.unite     = v.unite;
+  tr.innerHTML = `
+    <td class="td-nom px-3" style="font-weight:500"></td>
+    <td class="td-cat" style="color:#6b6a64"></td>
+    <td class="td-stock text-end"></td>
+    <td class="td-niveau" style="min-width:100px"></td>
+    <td class="td-achat text-end" style="color:#6b6a64"></td>
+    <td class="td-vente text-end" style="font-weight:500"></td>
+    <td class="td-marge text-end" style="color:#27500A"></td>
+    <td class="td-statut text-end px-3"></td>
+    <td class="td-actions text-end px-3" style="white-space:nowrap">
+      <span class="lien-modifier" style="font-size:11px;color:#1D9E75;cursor:pointer">Modifier</span>
+      <span class="lien-supprimer" style="font-size:11px;color:#791F1F;cursor:pointer;margin-left:10px">Supprimer</span>
+    </td>`;
+  // Squelette vide de la ligne : le contenu réel est rempli juste après par rafraichirLigne().
+
+  tbody.appendChild(tr);
+  attacherLigne(tr);
+  rafraichirLigne(tr);
+}
+
+async function supprimerProduit(tr) {
+  const id  = tr.dataset.id;
+  const nom = tr.dataset.nom;
+
+  if (!confirm('Voulez-vous vraiment supprimer "' + nom + '" ? Cette action est irréversible.')) {
+    return;
+  }
+
+  let data;
+  try {
+    const res = await fetch(URL_SUPPRIMER_TPL.replace('__ID__', id), { method: 'POST' });
+    data = await res.json();
+  } catch (e) {
+    alert('Erreur réseau. Vérifiez que le serveur tourne.');
+    return;
+  }
+
+  if (!data.succes) {
+    alert('Erreur : ' + data.message);
+    return;
+  }
+
+  tr.remove();
+  // Retire la ligne du tableau HTML directement (pas besoin de recharger la page).
+  recalculerCompteurs();
+  gcToast(data.message);
+}
+</script>
+{% endblock %}

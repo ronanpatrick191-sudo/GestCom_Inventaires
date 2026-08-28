@@ -1,0 +1,250 @@
+{% extends "base.jinja2" %}
+<!-- Hérite du gabarit commun (topbar + sidebar) défini dans base.jinja2. -->
+{% block title %}Dashboard{% endblock %}
+<!-- Remplace le titre de l'onglet du navigateur par "GestCom — Dashboard". -->
+
+{% block content %}
+<!-- Tout ce qui suit remplace la zone "content" vide de base.jinja2. -->
+
+<!-- ── Filtre de période ── -->
+<div class="d-flex justify-content-end mb-3">
+  <!-- Aligne le sélecteur de période (Jour/Semaine/Mois) à droite de l'écran. -->
+  <div style="display:flex;border:1px solid var(--gc-border);border-radius:8px;overflow:hidden">
+    <!-- Conteneur des 3 boutons, avec bordure commune et coins arrondis. -->
+    {# Boucle sur 3 paires (valeur technique, texte affiché) pour générer les 3 boutons. #}
+    {% for p, label in [('jour', 'Jour'), ('semaine', 'Semaine'), ('mois', 'Mois')] %}
+    {# Lien vers la même page dashboard, avec le paramètre d'URL ?periode=jour/semaine/mois.
+       La bordure verticale n'est ajoutée qu'entre les boutons (pas après le dernier), et
+       le bouton correspondant à la période actuellement choisie est mis en surbrillance verte. #}
+    <a href="{{ request.route_url('dashboard', _query={'periode': p}) }}"
+       style="padding:6px 14px;font-size:12px;text-decoration:none;
+              {% if not loop.last %}border-right:1px solid var(--gc-border);{% endif %}
+              {% if periode == p %}background:var(--gc-vert);color:#fff;font-weight:500;
+              {% else %}background:#fff;color:#6b6a64;{% endif %}">
+      {{ label }}
+      {# Texte affiché sur le bouton ("Jour", "Semaine" ou "Mois"). #}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── KPIs ── -->
+<div class="row g-3 mb-4">
+  <!-- Grille Bootstrap à 4 colonnes (sur grand écran) avec un espacement (gap) entre les cartes. -->
+
+  <div class="col-6 col-md-3">
+    <!-- Occupe la moitié de la largeur sur mobile, un quart sur écran moyen/large. -->
+    <div class="kpi-card" style="background:#E1F5EE">
+      <!-- Carte verte : total des ventes sur la période choisie. -->
+      <div class="kpi-label" style="color:#085041">Ventes ({{ periode }})</div>
+      <!-- Affiche la période actuelle entre parenthèses (jour/semaine/mois). -->
+      <div class="kpi-value" style="color:#085041">
+        {{ "{:,.0f}".format(ventes_jour) }} F
+        <!-- Formate le nombre avec des virgules de milliers et 0 décimale, ex: "17,500 F". -->
+      </div>
+      <div class="kpi-detail" style="color:#1D9E75">
+        {{ nb_transactions }} transaction{{ 's' if nb_transactions > 1 else '' }}
+        <!-- Ajoute un "s" au pluriel uniquement si plus d'une transaction. -->
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#EEEDFE">
+      <!-- Carte violette : profit net réel calculé (prix de vente - prix d'achat). -->
+      <div class="kpi-label" style="color:#3C3489">Profit net estimé</div>
+      <div class="kpi-value" style="color:#3C3489">
+        {{ "{:,.0f}".format(profit_jour) }} F
+      </div>
+      <div class="kpi-detail" style="color:#534AB7">marge réelle (achat/vente)</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#FAEEDA">
+      <!-- Carte orange : nombre d'alertes de stock non lues, avec lien vers la page Alertes. -->
+      <div class="kpi-label" style="color:#633806">Alertes non lues</div>
+      <div class="kpi-value" style="color:#633806">{{ nb_alertes_non_lues }}</div>
+      <div class="kpi-detail">
+        <a href="{{ request.route_url('alertes') }}" style="color:#854F0B">
+          Voir les alertes →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="kpi-card" style="background:#EAF3DE">
+      <!-- Carte verte claire : simple rappel de la date du jour et de la ville. -->
+      <div class="kpi-label" style="color:#27500A">Date</div>
+      <div class="kpi-value" style="color:#27500A; font-size:16px; margin-top:6px">
+        {{ aujourd_hui }}
+      </div>
+      <div class="kpi-detail" style="color:#3B6D11">Yaoundé, Cameroun</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Graphique + Top produits ── -->
+<div class="row g-3 mb-4">
+
+  <div class="col-md-8">
+    <!-- Colonne large (8/12) : le graphique d'évolution des ventes. -->
+    <div class="gc-card">
+      <div class="gc-card-h">
+        <span class="gc-card-title">Évolution des ventes (FCFA)</span>
+        <span class="gc-card-sub">{{ chart_sous_titre }}</span>
+        <!-- Sous-titre dynamique venant de views.py (ex: "Cette semaine · par jour"). -->
+      </div>
+      <div class="p-3">
+        <canvas id="chartVentes" height="130"></canvas>
+        <!-- Zone de dessin HTML5 où Chart.js va tracer le graphique (voir le script en bas). -->
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <!-- Colonne étroite (4/12) : le tableau des produits les plus vendus. -->
+    <div class="gc-card h-100">
+      <!-- "h-100" (Bootstrap) : prend toute la hauteur disponible, pour s'aligner avec le graphique. -->
+      <div class="gc-card-h">
+        <span class="gc-card-title">Top produits ({{ periode }})</span>
+      </div>
+      {% if top_produits %}
+        <!-- N'affiche le tableau que s'il existe au moins un produit vendu sur la période. -->
+        <table class="table table-sm mb-0" style="font-size:12px">
+          <thead style="background:#f5f5f0">
+            <tr>
+              <th class="px-3">Produit</th>
+              <th class="px-2 text-end">FCFA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in top_produits %}
+            <!-- Parcourt la liste des 5 meilleurs produits transmise par views.py. -->
+            <tr>
+              <td class="px-3">{{ p.nom }}</td>
+              <td class="px-2 text-end" style="color:#27500A;font-weight:500">
+                {{ "{:,.0f}".format(p.total_fcfa) }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <!-- Aucune vente sur la période : message à la place du tableau vide. -->
+        <p class="p-3 text-muted" style="font-size:12px">
+          Aucune vente enregistrée aujourd'hui.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Dernières transactions ── -->
+<div class="gc-card">
+  <div class="gc-card-h">
+    <span class="gc-card-title">Dernières transactions</span>
+    <a href="{{ request.route_url('caisse') }}" style="font-size:11px;color:#1D9E75">
+      Nouvelle vente →
+      <!-- Raccourci vers la page Caisse pour enregistrer une nouvelle vente. -->
+    </a>
+  </div>
+
+  {% if dernieres_ventes %}
+  <!-- N'affiche le tableau que s'il existe au moins une transaction enregistrée. -->
+  <div class="table-responsive">
+    <!-- Ajoute une barre de défilement horizontale sur petit écran si le tableau est trop large. -->
+    <table class="table table-sm table-hover mb-0" style="font-size:12px">
+      <thead style="background:#f5f5f0">
+        <tr>
+          <th class="px-3">Heure</th>
+          <th>Produit</th>
+          <th>Mode</th>
+          <th>Qté</th>
+          <th class="text-end px-3">Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in dernieres_ventes %}
+        <!-- Parcourt les 6 dernières transactions transmises par views.py. -->
+        <tr>
+          <td class="px-3" style="color:#9c9a92">{{ t.heure() }}</td>
+          <!-- Appelle la méthode heure() du modèle Transaction (models.py) pour formater l'heure. -->
+          <td>{{ t.produit.nom if t.produit else '—' }}</td>
+          <!-- Affiche le nom du produit lié ; un tiret si le produit a été supprimé depuis. -->
+          <td>
+            {% if t.mode_paiement == 'orange' %}
+              <span class="badge" style="background:#FAEEDA;color:#633806">Orange Money</span>
+            {% elif t.mode_paiement == 'mtn' %}
+              <span class="badge" style="background:#EAF3DE;color:#27500A">MTN MoMo</span>
+            {% else %}
+              <span class="badge" style="background:#F1EFE8;color:#444441">Cash</span>
+            {% endif %}
+            <!-- Affiche un badge de couleur différente selon le moyen de paiement utilisé. -->
+          </td>
+          <td>{{ t.quantite }}</td>
+          <td class="text-end px-3" style="color:#27500A;font-weight:500">
+            +{{ "{:,.0f}".format(t.montant) }} F
+            <!-- Le "+" devant rappelle visuellement qu'il s'agit d'une rentrée d'argent. -->
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="p-3 text-muted" style="font-size:12px">Aucune transaction pour le moment.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+<!-- Fin du bloc "content". -->
+
+{% block scripts %}
+<!-- Script JavaScript propre à cette page, injecté dans la zone "scripts" de base.jinja2. -->
+<script>
+new Chart(document.getElementById('chartVentes'), {
+  // Crée un nouveau graphique Chart.js, attaché au <canvas id="chartVentes"> défini plus haut.
+  type: 'bar',
+  // Type de graphique : barres verticales.
+  data: {
+    labels: {{ labels_semaine|tojson }},
+    // Convertit la liste Python "labels_semaine" (ex: ["Lun","Mar"...]) en tableau JavaScript.
+    datasets: [{
+      label: 'Ventes FCFA',
+      data: {{ ventes_semaine|tojson }},
+      // Convertit la liste Python des montants en tableau JavaScript, une valeur par label.
+      backgroundColor: '#1D9E75',
+      // Couleur verte des barres (couleur de marque GestCom).
+      borderRadius: 4,
+      // Coins légèrement arrondis en haut de chaque barre.
+      barPercentage: 0.55,
+      // Largeur de chaque barre : 55% de l'espace disponible (laisse de l'air entre les barres).
+    }]
+  },
+  options: {
+    responsive: true,
+    // Le graphique s'adapte automatiquement à la taille de son conteneur.
+    maintainAspectRatio: false,
+    // Permet de fixer une hauteur précise (height="130" sur le <canvas>) sans déformation.
+    plugins: { legend: { display: false } },
+    // Cache la légende (inutile ici : un seul jeu de données).
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+      // Axe horizontal : pas de lignes de grille, petite taille de police.
+      y: {
+        border: { display: false },
+        ticks: {
+          font: { size: 10 },
+          callback: v => (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) + ' F'
+          // Affiche les grands nombres en version abrégée (ex: 17000 → "17k F").
+        }
+      }
+    }
+  }
+});
+</script>
+{% endblock %}
