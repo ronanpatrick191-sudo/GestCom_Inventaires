@@ -26,6 +26,11 @@ def main(global_config, **settings):
         # URL complète de connexion MySQL. Le development.ini versionné ne contient
         # qu'un exemple sans vrai mot de passe ; la vraie valeur vient de .env et
         # écrase la ligne du .ini ici, au démarrage.
+        ('acces.utilisateur', 'ACCES_UTILISATEUR'),
+        # Identifiant unique de connexion à l'application (protection niveau A).
+        ('acces.motdepasse',  'ACCES_MOTDEPASSE'),
+        # Mot de passe unique associé. Sans lui, l'application est ouverte à tous
+        # (voir securite.py) — DOIT être défini en production.
         ('smtp.user',     'SMTP_USER'),
         # Adresse email Gmail utilisée pour envoyer les alertes de stock.
         ('smtp.password', 'SMTP_PASSWORD'),
@@ -54,6 +59,8 @@ def main(global_config, **settings):
     # ── Extensions Pyramid ──
     config.include('pyramid_jinja2')
     # Active le moteur de templates Jinja2 (fichiers .jinja2 dans templates/).
+    config.include('.securite')         # protection d'accès (mot de passe unique)
+    # Ajoute le tween qui exige l'identifiant/mot de passe ACCES_* avant toute page.
     config.include('.main_models')      # connexion MySQL via SQLAlchemy
     # Exécute la fonction includeme() de main_models.py : prépare la connexion à la base MySQL.
 
