@@ -288,6 +288,13 @@
         Caisse
       </a>
 
+      <a href="{{ request.route_url('transactions') }}"
+         class="nav-link {% if request.matched_route.name == 'transactions' %}active{% endif %}">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M11 2l2 2-2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 12H3M5 10l-2 2 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <!-- Icône en forme de double flèche (échanges), symbole des transactions. -->
+        Transactions
+      </a>
+
       <a href="{{ request.route_url('rapport') }}"
          class="nav-link {% if request.matched_route.name == 'rapport' %}active{% endif %}">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 13c2-3 4-2 5-4.5S11 5 14 3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
@@ -380,17 +387,27 @@
     });
 
     function afficherResultats(items) {
-      // Construit le HTML du menu déroulant à partir de la liste de produits trouvés.
+      // Construit le menu déroulant via le DOM (pas de concaténation HTML) pour que le
+      // nom du produit ne puisse jamais être interprété comme du code (échappement automatique).
+      resultats.innerHTML = '';
       if (items.length === 0) {
-        resultats.innerHTML = '<div class="vide">Aucun produit trouvé</div>';
-        // Aucun résultat : affiche un message plutôt qu'une liste vide.
+        const vide = document.createElement('div');
+        vide.className = 'vide';
+        vide.textContent = 'Aucun produit trouvé';
+        resultats.appendChild(vide);
       } else {
-        resultats.innerHTML = items.map(p =>
-          '<a href="' + p.url + '"><span>' + p.nom + '</span>' +
-          '<span style="color:#9c9a92">' + p.stock + ' ' + p.unite + '</span></a>'
-        ).join('');
-        // Transforme chaque résultat en un lien cliquable "nom — stock unité",
-        // puis assemble tous les liens en une seule chaîne HTML insérée dans le conteneur.
+        items.forEach(p => {
+          const lien = document.createElement('a');
+          lien.href = p.url;
+          const nom = document.createElement('span');
+          nom.textContent = p.nom;
+          const stock = document.createElement('span');
+          stock.style.color = '#9c9a92';
+          stock.textContent = p.stock + ' ' + p.unite;
+          lien.appendChild(nom);
+          lien.appendChild(stock);
+          resultats.appendChild(lien);
+        });
       }
       resultats.classList.add('show');
       // Rend le menu déroulant visible.

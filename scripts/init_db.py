@@ -25,40 +25,50 @@ from sqlalchemy import create_engine, text
 # create_engine : crée une connexion directe à MySQL (sans passer par Pyramid).
 from sqlalchemy.orm import sessionmaker
 # Fabrique de sessions de base de données, comme dans main_models.py.
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 # Pour générer des dates de ventes de test réparties sur les derniers jours.
 
+from GestCom.temps import maintenant_cameroun
+# Heure locale du Cameroun (UTC+1) : même référence de temps que l'application.
 from GestCom.main_models import Base
 # Classe de base commune, nécessaire pour créer les tables (Base.metadata.create_all).
 from GestCom.models import Produit, Transaction, Alerte
 # Les 3 modèles de données à peupler avec des exemples.
 
 # -- Connexion MySQL ---------------------------------------------------------
-# Lire depuis development.ini ou modifier directement ici
-DATABASE_URL = None
+# Priorité identique à l'application (voir GestCom/__init__.py) :
+#   1. la variable d'environnement DATABASE_URL (chargée depuis .env à l'import
+#      du package GestCom ci-dessus) — c'est la vraie URL, avec le vrai mot de passe ;
+#   2. sinon, la ligne sqlalchemy.url de development.ini (qui ne contient qu'un
+#      mot de passe d'EXEMPLE et échouerait à se connecter en l'état).
+DATABASE_URL = os.environ.get('DATABASE_URL')
 # Variable qui contiendra l'adresse de connexion à la base de données.
 
-try:
-    import configparser
-    # Module standard qui sait lire les fichiers .ini.
-    ini_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'GestCom', 'config', 'development.ini'
-    )
-    # Construit le chemin complet vers GestCom/config/development.ini.
-    cfg = configparser.ConfigParser()
-    # Crée un lecteur de fichier .ini.
-    cfg.read(ini_path)
-    # Charge le contenu du fichier.
-    DATABASE_URL = cfg['app:main']['sqlalchemy.url']
-    # Récupère la ligne "sqlalchemy.url" dans la section [app:main] (la même que Pyramid utilise).
-    print("[OK] URL MySQL lue depuis development.ini")
-except Exception as e:
-    # Si le fichier .ini est introuvable ou mal formé...
-    print(f"[!] Impossible de lire development.ini : {e}")
-    print("[!] Utilisation de la valeur par defaut : root sans mot de passe")
-    DATABASE_URL = "mysql+pymysql://root:@localhost/gestcom_db"
-    # ...on utilise une valeur de secours pour ne pas bloquer le script.
+if DATABASE_URL:
+    print("[OK] URL MySQL lue depuis DATABASE_URL (.env)")
+else:
+    try:
+        import configparser
+        # Module standard qui sait lire les fichiers .ini.
+        ini_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'GestCom', 'config', 'development.ini'
+        )
+        # Construit le chemin complet vers GestCom/config/development.ini.
+        cfg = configparser.ConfigParser()
+        # Crée un lecteur de fichier .ini.
+        cfg.read(ini_path)
+        # Charge le contenu du fichier.
+        DATABASE_URL = cfg['app:main']['sqlalchemy.url']
+        # Récupère la ligne "sqlalchemy.url" dans la section [app:main] (la même que Pyramid utilise).
+        print("[!] DATABASE_URL absente de .env — repli sur development.ini")
+        print("[!] (mot de passe d'exemple : la connexion echouera probablement)")
+    except Exception as e:
+        # Si le fichier .ini est introuvable ou mal formé...
+        print(f"[!] Impossible de lire development.ini : {e}")
+        print("[!] Utilisation de la valeur par defaut : root sans mot de passe")
+        DATABASE_URL = "mysql+pymysql://root:@localhost/gestcom_db"
+        # ...on utilise une valeur de secours pour ne pas bloquer le script.
 
 print(f"[>] Connexion a : {DATABASE_URL}\n")
 # Affiche l'adresse utilisée, pour que l'utilisateur puisse vérifier avant que ça échoue.
@@ -69,12 +79,16 @@ Session = sessionmaker(bind=engine)
 # Prépare une fabrique de sessions reliée à ce moteur.
 
 
-def creer_tables():
-    """Cree toutes les tables dans MySQL."""
-    print("[...] Creation des tables...")
+def reinitialiser_tables():
+    """Remet la base a zero : supprime puis recree toutes les tables."""
+    print("[!] SUPPRESSION des tables existantes (produits, transactions, alertes)...")
+    Base.metadata.drop_all(engine)
+    # Efface complètement les 3 tables et TOUTES leurs données : c'est le
+    # "repartir de zéro". À ne lancer que sur la base de développement.
+    print("[...] Recreation des tables...")
     Base.metadata.create_all(engine)
-    # Crée les tables produits/transactions/alertes si elles n'existent pas encore.
-    print("[OK] Tables creees : produits, transactions, alertes\n")
+    # Recrée des tables vides produits/transactions/alertes.
+    print("[OK] Base remise a zero : produits, transactions, alertes\n")
 
 
 def inserer_produits(session):
@@ -116,8 +130,8 @@ def inserer_produits(session):
 def inserer_transactions(session, produits):
     """Insere des ventes de test sur les 3 derniers jours."""
     print("[...] Insertion des transactions...")
-    now = datetime.now(timezone.utc)
-    # Heure actuelle en UTC, point de départ pour calculer les dates des ventes passées.
+    now = maintenant_cameroun()
+    # Heure actuelle au Cameroun, point de départ pour calculer les dates des ventes passées.
     ventes = [
         # Chaque vente référence un produit via son index dans la liste "produits" (0 = Riz...).
         Transaction(produit_id=produits[0].id, quantite=2, montant=35000,
@@ -177,8 +191,8 @@ if __name__ == '__main__':
     print("  GestCom -- Initialisation base de donnees")
     print("=" * 50 + "\n")
 
-    creer_tables()
-    # Étape 1 : s'assurer que les tables existent dans MySQL.
+    reinitialiser_tables()
+    # Étape 1 : repartir de zéro — supprimer et recréer les tables vides.
 
     session = Session()
     # Ouvre une nouvelle session de base de données pour insérer toutes les données de test.

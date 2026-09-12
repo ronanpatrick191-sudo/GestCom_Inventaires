@@ -21,21 +21,23 @@ GestCom_Inventaires/
 │   ├── main_models.py     ← connexion SQLAlchemy + MySQL
 │   ├── models.py          ← Produit, Transaction, Alerte
 │   ├── views.py           ← TOUTES les vues (un seul fichier)
+│   ├── securite.py        ← protection d'accès niveau A (mot de passe unique)
+│   ├── temps.py           ← heure locale du Cameroun (WAT, UTC+1) pour toute l'app
 │   ├── smtp_service.py    ← emails d'alerte stock (SMTP Gmail)
-│   ├── mobile_money_service.py ← QR + paiements Orange Money / MTN MoMo
+│   ├── mobile_money_service.py ← QR + paiements Orange Money / MTN MoMo (mode démo v1)
 │   ├── templates/
 │   │   ├── base.jinja2    ← layout commun avec sidebar
 │   │   ├── dashboard/index.jinja2
 │   │   ├── inventaire/list.jinja2  (page "Produits")
 │   │   ├── stock/index.jinja2
 │   │   ├── rapport/index.jinja2
+│   │   ├── transactions/list.jinja2
 │   │   ├── caisse/index.jinja2
 │   │   └── alertes/list.jinja2
-│   ├── static/
-│   │   ├── css/app.css
-│   │   └── img/
+│   ├── static/            ← vide pour l'instant : CSS géré dans base.jinja2 + Bootstrap CDN
 │   └── config/
-│       └── development.ini
+│       ├── development.ini
+│       └── production.ini
 ├── scripts/
 │   └── init_db.py         ← initialisation données de test
 ├── pyproject.toml
@@ -62,6 +64,7 @@ GestCom_Inventaires/
 | stock                  | /stock                            | GET     |
 | stock_alerte_groupee   | /stock/alerte-email               | POST    |
 | rapport                | /rapport                          | GET     |
+| transactions           | /transactions (?periode=jour/semaine/mois) | GET |
 | recherche              | /recherche (?q=...)               | GET     |
 | caisse                 | /caisse                           | GET     |
 | vente_enregistrer      | /caisse/vendre                    | POST    |
@@ -102,15 +105,28 @@ http://localhost:6543/dashboard
 - [x] QR Code paiement MTN / Orange Money (généré côté serveur)
 - [x] Email SMTP alerte rupture de stock
 - [x] Recherche globale (topbar)
+- [x] Transactions — historique filtrable jour/semaine/mois (route `transactions`)
+- [x] Protection d'accès niveau A — mot de passe unique (`securite.py`)
 - [ ] Export PDF/Excel (catalogue, rapport) — pas encore commencé
 
 ## Paiements mobiles — état réel
-Le flux Orange Money / MTN MoMo (`mobile_money_service.py`) est câblé pour
-appeler les vraies API si `ORANGE_MONEY_API_KEY`/`MTN_MOMO_API_KEY` sont
-définies dans `.env` (voir `.env.example`). **Aucun identifiant marchand
-n'est encore obtenu** → tant qu'ils ne le sont pas, la caisse fonctionne en
-mode démo (QR généré, confirmation manuelle du paiement par le commerçant).
-À tester en conditions réelles dès que les accès Orange/MTN seront en main.
+**Décision du 29/08/2026 : Orange Money et MTN MoMo restent en mode démo
+pour tout le v1**, par choix assumé (pas de contrat marchand ni sandbox
+pour l'instant — ni le coût ni le délai ne collent avec la livraison du
+31/08/2026). `mobile_money_service.py` ne fait plus aucun appel réseau vers
+Orange/MTN : le QR est généré côté serveur, et le commerçant confirme
+manuellement la réception du paiement (bouton "Marquer comme payée" en
+caisse) — exactement comme pour une vente cash. Les variables
+`ORANGE_MONEY_API_KEY` / `MTN_MOMO_API_KEY` etc. dans `.env.example`
+restent présentes mais ne sont plus lues.
+
+Pour activer les vraies API plus tard (sandbox ou production), il faudra :
+souscrire aux portails développeur Orange (`developer.orange.com`) et MTN
+(`momodeveloper.mtn.com`), obtenir les identifiants (voir liens dans la
+conversation avec Claude du 29/08/2026), puis remplacer le contenu de
+`initier_paiement()` / `verifier_paiement()` dans `mobile_money_service.py`
+par de vrais appels OAuth2 — la signature des deux fonctions ne changera
+pas, donc `views.py` n'aura pas besoin d'être modifié.
 
 ## Fonctions v2 (après livraison — ne pas coder maintenant)
 - Prévisions IA avec Pandas

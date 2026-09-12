@@ -17,21 +17,25 @@ from email.mime.text import MIMEText
 # Permet de créer la partie "texte/HTML" du contenu d'un email.
 from email.mime.multipart import MIMEMultipart
 # Permet de construire un email pouvant contenir plusieurs parties (ici : juste du HTML).
-from datetime import datetime
+from .temps import maintenant_cameroun
+# Heure locale du Cameroun (UTC+1), pour dater les emails d'alerte à l'heure
+# que verra le commerçant et pas celle du serveur.
 # Pour insérer la date/heure actuelle dans le corps de l'email.
 
 
 def envoyer_alerte_stock(settings, produit_nom, stock_actuel,
-                         seuil, type_alerte='rupture'):
+                         seuil, type_alerte='rupture', url_inventaire=None):
     """
     Envoie un email d'alerte au gerant.
 
     Args:
-        settings     : dictionnaire de config Pyramid (depuis development.ini)
-        produit_nom  : nom du produit en alerte
-        stock_actuel : quantite restante
-        seuil        : seuil minimum configure
-        type_alerte  : 'rupture' ou 'seuil_bas'
+        settings        : dictionnaire de config Pyramid (depuis development.ini)
+        produit_nom     : nom du produit en alerte
+        stock_actuel    : quantite restante
+        seuil           : seuil minimum configure
+        type_alerte     : 'rupture' ou 'seuil_bas'
+        url_inventaire  : URL absolue de la page Inventaire (request.route_url('inventaire')),
+                          pour que le lien du bouton fonctionne aussi en production.
     """
     host     = settings.get('smtp.host',     'smtp.gmail.com')
     # Adresse du serveur SMTP ; "smtp.gmail.com" si non défini dans la config.
@@ -64,8 +68,8 @@ def envoyer_alerte_stock(settings, produit_nom, stock_actuel,
         couleur = '#EF9F27'
         # Orange : couleur d'avertissement pour un stock bas.
 
-    maintenant = datetime.now().strftime('%d/%m/%Y a %H:%M')
-    # Date et heure actuelles, mises en forme pour être lisibles dans l'email.
+    maintenant = maintenant_cameroun().strftime('%d/%m/%Y a %H:%M')
+    # Date et heure actuelles au Cameroun, mises en forme pour l'email.
 
     # Ci-dessous : le contenu HTML complet de l'email (mise en page + style CSS en ligne).
     # Les valeurs entre {accolades} (couleur, niveau, produit_nom, etc.) sont injectées
@@ -116,7 +120,7 @@ def envoyer_alerte_stock(settings, produit_nom, stock_actuel,
         <!-- Bouton/lien qui ramène directement vers la page Inventaire de l'app -->
         <div style="background:#1D9E75;padding:10px 18px;border-radius:6px;
                     display:inline-block;margin-top:8px">
-          <a href="http://localhost:6543/inventaire"
+          <a href="{url_inventaire or 'http://localhost:6543/inventaire'}"
              style="color:#fff;text-decoration:none;font-size:13px;font-weight:bold">
             Voir l'inventaire →
           </a>
@@ -167,7 +171,7 @@ def envoyer_alerte_stock(settings, produit_nom, stock_actuel,
         return False
 
 
-def envoyer_alertes_groupees(settings, produits_en_alerte):
+def envoyer_alertes_groupees(settings, produits_en_alerte, url_inventaire=None):
     """
     Envoie un email d'alerte pour chaque produit actuellement sous son
     seuil (utilise par le bouton "Envoyer alerte email" de la page Stock).
@@ -181,10 +185,11 @@ def envoyer_alertes_groupees(settings, produits_en_alerte):
         # Détermine le type d'alerte selon que le stock soit à zéro ou juste bas.
         ok = envoyer_alerte_stock(
             settings,
-            produit_nom  = produit.nom,
-            stock_actuel = produit.stock,
-            seuil        = produit.seuil,
-            type_alerte  = type_alerte,
+            produit_nom     = produit.nom,
+            stock_actuel    = produit.stock,
+            seuil           = produit.seuil,
+            type_alerte     = type_alerte,
+            url_inventaire  = url_inventaire,
         )
         # Envoie un email individuel pour ce produit, en réutilisant la fonction ci-dessus.
         if ok:

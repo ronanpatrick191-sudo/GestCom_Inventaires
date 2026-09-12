@@ -511,19 +511,27 @@ function ajouterHistorique(nom, qte, montant, mode) {
   if (ventes_session.length > 5) ventes_session.pop();
   // Ne garde que les 5 dernières ventes de la session, retire la plus ancienne au-delà.
 
-  const modes = { cash:'Cash', orange:'Orange Money', mtn:'MTN MoMo' };
-  const html  = ventes_session.map(v =>
-    '<div style="display:flex;justify-content:space-between;' +
-    'padding:6px 0;border-bottom:0.5px solid #e8e8e0">' +
-    '<span>' + v.nom + ' x' + v.qte + '</span>' +
-    '<span style="font-weight:500;color:#085041">' +
-    v.montant.toLocaleString('fr-FR') + ' F</span>' +
-    '</div>'
-  ).join('');
-  // Construit une ligne HTML par vente, puis les assemble toutes ensemble.
+  // Construit chaque ligne via le DOM (pas de concaténation HTML) pour que le nom du
+  // produit ne puisse jamais être interprété comme du code (échappement automatique).
+  const conteneur = document.createElement('div');
+  conteneur.style.padding = '0 14px';
+  ventes_session.forEach(v => {
+    const ligne = document.createElement('div');
+    ligne.style.cssText =
+      'display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid #e8e8e0';
+    const gauche = document.createElement('span');
+    gauche.textContent = v.nom + ' x' + v.qte;
+    const droite = document.createElement('span');
+    droite.style.cssText = 'font-weight:500;color:#085041';
+    droite.textContent = v.montant.toLocaleString('fr-FR') + ' F';
+    ligne.appendChild(gauche);
+    ligne.appendChild(droite);
+    conteneur.appendChild(ligne);
+  });
 
-  document.getElementById('historique-ventes').innerHTML =
-    '<div style="padding:0 14px">' + html + '</div>';
+  const cible = document.getElementById('historique-ventes');
+  cible.innerHTML = '';
+  cible.appendChild(conteneur);
 }
 </script>
 {% endblock %}

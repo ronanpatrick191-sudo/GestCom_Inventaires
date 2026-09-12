@@ -11,8 +11,10 @@ from sqlalchemy import (
 # ForeignKey : crée un lien vers l'identifiant d'une autre table (clé étrangère).
 from sqlalchemy.orm import relationship
 # Permet de naviguer facilement entre objets liés (ex: produit.transactions).
-from datetime import datetime, timezone
-# Pour générer automatiquement la date/heure actuelle (en UTC) lors de la création d'une ligne.
+from .temps import maintenant_cameroun
+# Génère l'heure locale du Cameroun (UTC+1) au moment de la création d'une ligne,
+# pour que les dates stockées correspondent à ce que voit le commerçant, quel
+# que soit le pays où tourne le serveur.
 
 from .main_models import Base
 # Importe la classe de base commune définie dans main_models.py : toutes les tables en héritent.
@@ -44,9 +46,9 @@ class Produit(Base):
     # Unité de mesure du produit (pièce, kg, sac...), "unité" par défaut.
     date_ajout  = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=maintenant_cameroun
     )
-    # Date/heure de création automatique (en UTC), calculée au moment de l'ajout.
+    # Date/heure de création automatique (heure du Cameroun), calculée au moment de l'ajout.
 
     # Relation : un produit peut avoir plusieurs transactions
     transactions = relationship(
@@ -117,9 +119,9 @@ class Transaction(Base):
     # Référence externe renvoyée par l'API MTN/Orange (utile pour vérifier le paiement plus tard).
     date_vente      = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=maintenant_cameroun
     )
-    # Date/heure automatique de la vente (en UTC).
+    # Date/heure automatique de la vente (heure du Cameroun).
 
     # Relation : chaque transaction appartient à un produit
     produit = relationship('Produit', back_populates='transactions')
@@ -175,9 +177,9 @@ class Alerte(Base):
     # Indique si l'alerte a déjà été consultée (0 = non lue, 1 = lue) ; 0 par défaut.
     date_alerte = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=maintenant_cameroun
     )
-    # Date/heure automatique de création de l'alerte (en UTC).
+    # Date/heure automatique de création de l'alerte (heure du Cameroun).
 
     produit = relationship('Produit')
     # Donne accès à alerte.produit (l'objet Produit concerné, s'il existe).

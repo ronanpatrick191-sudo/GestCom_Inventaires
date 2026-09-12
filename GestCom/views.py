@@ -6,11 +6,11 @@ Style : un seul fichier, comme Tetris/Mitarbeiter_Verwaltung.
 """
 from pyramid.view import view_config
 # Décorateur qui relie une fonction Python à une route (voir @view_config plus bas).
-from pyramid.httpexceptions import HTTPFound, HTTPNotFound, HTTPBadRequest
-# HTTPFound : réponse de redirection (code 302). Les deux autres sont importées mais non utilisées ici.
+from pyramid.httpexceptions import HTTPFound
+# HTTPFound : réponse de redirection (code 302), utilisée par home_view.
 from sqlalchemy import func
 # "func" donne accès aux fonctions SQL (SUM, COUNT, HOUR, DATE...) directement depuis Python.
-from datetime import date, datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta
 # Outils de manipulation de dates : date du jour, horodatage, fuseau UTC, durées.
 import threading
 # Permet de lancer une tâche (ici : l'envoi d'email) dans un fil d'exécution séparé,
@@ -18,6 +18,10 @@ import threading
 
 from .models import Produit, Transaction, Alerte
 # Importe les 3 tables définies dans models.py.
+from .temps import aujourd_hui_cameroun
+# Date du jour dans le fuseau du Cameroun (UTC+1), pour que les filtres
+# jour/semaine/mois correspondent à la journée réelle du commerçant même
+# si le serveur tourne en Europe.
 from .smtp_service import envoyer_alerte_stock, envoyer_email_test, envoyer_alertes_groupees
 # Importe les fonctions d'envoi d'email définies dans smtp_service.py.
 from .mobile_money_service import generer_qr_base64, initier_paiement, verifier_paiement
@@ -157,7 +161,7 @@ def dashboard_view(request):
     """
     db = request.dbsession
     # Récupère la session de base de données ouverte pour cette requête (voir main_models.py).
-    aujourd_hui = date.today()
+    aujourd_hui = aujourd_hui_cameroun()
     # Date du jour, utilisée comme référence pour tous les calculs de période.
 
     periode = request.params.get('periode', 'jour')
@@ -333,7 +337,10 @@ def stock_alerte_email(request):
 
     settings = request.registry.settings
     # Récupère la configuration globale de l'application (dont les identifiants SMTP).
-    nb_envoyes = envoyer_alertes_groupees(settings, produits_alerte)
+    nb_envoyes = envoyer_alertes_groupees(
+        settings, produits_alerte,
+        url_inventaire=request.route_url('inventaire'),
+    )
     # Envoie un email pour chaque produit en alerte, renvoie le nombre d'envois réussis.
 
     if nb_envoyes == 0:
@@ -352,7 +359,7 @@ def stock_alerte_email(request):
 def rapport_view(request):
     """Page Rapport — chiffre d'affaires, profit net et tendance mensuelle."""
     db = request.dbsession
-    aujourd_hui = date.today()
+    aujourd_hui = aujourd_hui_cameroun()
     debut_mois = aujourd_hui.replace(day=1)
     # Premier jour du mois en cours, référence pour tous les totaux "du mois".
 
@@ -433,6 +440,77 @@ def rapport_view(request):
         'ca_mensuel':          [round(m.ca or 0) for m in six_derniers],
         'profit_mensuel':      [round(m.profit or 0) for m in six_derniers],
         'mois_courant':        f'{NOMS_MOIS[aujourd_hui.month]} {aujourd_hui.year}',
+        'nb_alertes_non_lues': _nb_alertes_non_lues(db),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# TRANSACTIONS — liste filtrable (jour / semaine / mois)
+# ══════════════════════════════════════════════════════════════
+@view_config(
+    route_name='transactions',
+    renderer='GestCom:templates/transactions/list.jinja2'
+)
+def transactions_view(request):
+    """
+    Liste toutes les transactions de la période choisie (jour / semaine /
+    mois), de la plus récente à la plus ancienne, avec les totaux associés.
+    Le filtre se fait via le paramètre d'URL "?periode=jour|semaine|mois".
+    """
+    db = request.dbsession
+    aujourd_hui = aujourd_hui_cameroun()
+    # Date du jour : référence pour calculer le début de chaque période.
+
+    periode = request.params.get('periode', 'jour')
+    # Lit "?periode=..." dans l'URL ; "jour" par défaut si absent.
+    if periode not in ('jour', 'semaine', 'mois'):
+        # Sécurité : toute valeur inattendue retombe sur "jour".
+        periode = 'jour'
+
+    if periode == 'semaine':
+        date_debut = aujourd_hui - timedelta(days=6)
+        # 7 jours glissants (aujourd'hui inclus).
+    elif periode == 'mois':
+        date_debut = aujourd_hui.replace(day=1)
+        # Depuis le 1er du mois en cours.
+    else:
+        date_debut = aujourd_hui
+        # Vue "jour" : uniquement aujourd'hui.
+
+    transactions = (
+        db.query(Transaction)
+        .filter(func.date(Transaction.date_vente) >= date_debut)
+        .filter(func.date(Transaction.date_vente) <= aujourd_hui)
+        # Garde les ventes comprises dans l'intervalle [date_debut, aujourd_hui].
+        .order_by(Transaction.date_vente.desc())
+        # De la vente la plus récente à la plus ancienne.
+        .all()
+    )
+
+    payees = [t for t in transactions if t.statut == 'paye']
+    # Seules les ventes réellement payées comptent dans les totaux d'argent.
+    montant_total = round(sum(t.montant for t in payees))
+    # Chiffre d'affaires de la période, en FCFA entiers.
+    nb_articles = sum(t.quantite for t in payees)
+    # Nombre total d'articles vendus sur la période.
+
+    libelles_periode = {
+        'jour':    "Aujourd'hui",
+        'semaine': '7 derniers jours',
+        'mois':    f'{NOMS_MOIS[aujourd_hui.month]} {aujourd_hui.year}',
+    }
+    # Texte lisible affiché à côté du sélecteur de période.
+
+    return {
+        'periode':             periode,
+        'periode_libelle':     libelles_periode[periode],
+        'transactions':        transactions,
+        'nb_transactions':     len(transactions),
+        'nb_en_attente':       len(transactions) - len(payees),
+        # Nombre de ventes encore en attente de confirmation de paiement.
+        'montant_total':       montant_total,
+        'nb_articles':         nb_articles,
+        'aujourd_hui':         aujourd_hui.strftime('%d/%m/%Y'),
         'nb_alertes_non_lues': _nb_alertes_non_lues(db),
     }
 
@@ -669,21 +747,23 @@ def _finaliser_transaction(db, request, transaction):
         alerte_creee = True
 
         # Envoyer email SMTP en arrière-plan (sans bloquer la réponse)
-        settings     = request.registry.settings
-        produit_nom  = produit.nom
-        stock_actuel = produit.stock
-        seuil        = produit.seuil
+        settings        = request.registry.settings
+        produit_nom     = produit.nom
+        stock_actuel    = produit.stock
+        seuil           = produit.seuil
+        url_inventaire  = request.route_url('inventaire')
         # On copie ces valeurs dans des variables simples avant de lancer le thread, car
-        # l'objet "produit" (lié à la session de base de données) ne doit pas être utilisé
-        # depuis un autre thread une fois la requête HTTP terminée.
+        # l'objet "produit" (lié à la session de base de données) et "request" ne doivent
+        # pas être utilisés depuis un autre thread une fois la requête HTTP terminée.
 
         def envoyer_email():
             envoyer_alerte_stock(
                 settings,
-                produit_nom  = produit_nom,
-                stock_actuel = stock_actuel,
-                seuil        = seuil,
-                type_alerte  = type_al,
+                produit_nom     = produit_nom,
+                stock_actuel    = stock_actuel,
+                seuil           = seuil,
+                type_alerte     = type_al,
+                url_inventaire  = url_inventaire,
             )
         # Fonction interne qui sera exécutée dans un thread séparé.
 

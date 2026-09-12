@@ -1,0 +1,135 @@
+{% extends "base.jinja2" %}
+<!-- Hérite du gabarit commun (topbar + sidebar) défini dans base.jinja2. -->
+{% block title %}Transactions{% endblock %}
+<!-- Remplace le titre de l'onglet du navigateur par "GestCom — Transactions". -->
+
+{% block content %}
+<!-- Tout ce qui suit remplace la zone "content" vide de base.jinja2. -->
+
+<!-- ── En-tête + filtre de période ── -->
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0" style="font-weight:500">Transactions</h5>
+    <div style="font-size:12px;color:#6b6a64">
+      {{ periode_libelle }} · {{ nb_transactions }} transaction{{ 's' if nb_transactions > 1 else '' }}
+      {% if nb_en_attente > 0 %}
+        · {{ nb_en_attente }} en attente
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="display:flex;border:1px solid var(--gc-border);border-radius:8px;overflow:hidden">
+    <!-- Les 3 boutons Jour / Semaine / Mois, comme sur le dashboard. -->
+    {% for p, label in [('jour', 'Jour'), ('semaine', 'Semaine'), ('mois', 'Mois')] %}
+    <a href="{{ request.route_url('transactions', _query={'periode': p}) }}"
+       style="padding:6px 14px;font-size:12px;text-decoration:none;
+              {% if not loop.last %}border-right:1px solid var(--gc-border);{% endif %}
+              {% if periode == p %}background:var(--gc-vert);color:#fff;font-weight:500;
+              {% else %}background:#fff;color:#6b6a64;{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── Totaux de la période ── -->
+<div class="row g-3 mb-4">
+
+  <div class="col-6 col-md-4">
+    <div class="kpi-card" style="background:#E1F5EE">
+      <div class="kpi-label" style="color:#085041">Chiffre d'affaires ({{ periode }})</div>
+      <div class="kpi-value" style="color:#085041">
+        {{ "{:,.0f}".format(montant_total) }} F
+        <!-- Total des ventes payées, séparateurs de milliers, 0 décimale. -->
+      </div>
+      <div class="kpi-detail" style="color:#1D9E75">ventes payées uniquement</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4">
+    <div class="kpi-card" style="background:#EEEDFE">
+      <div class="kpi-label" style="color:#3C3489">Transactions</div>
+      <div class="kpi-value" style="color:#3C3489">{{ nb_transactions }}</div>
+      <div class="kpi-detail" style="color:#534AB7">
+        {{ nb_en_attente }} en attente de paiement
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4">
+    <div class="kpi-card" style="background:#EAF3DE">
+      <div class="kpi-label" style="color:#27500A">Articles vendus</div>
+      <div class="kpi-value" style="color:#27500A">{{ nb_articles }}</div>
+      <div class="kpi-detail" style="color:#3B6D11">quantités additionnées</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Liste des transactions ── -->
+<div class="gc-card">
+  <div class="gc-card-h">
+    <span class="gc-card-title">Détail des transactions</span>
+    <a href="{{ request.route_url('caisse') }}" style="font-size:11px;color:#1D9E75">
+      Nouvelle vente →
+    </a>
+  </div>
+
+  {% if transactions %}
+  <!-- N'affiche le tableau que s'il existe au moins une transaction sur la période. -->
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0" style="font-size:12px">
+      <thead style="background:#f5f5f0">
+        <tr>
+          <th class="px-3">Date</th>
+          <th>Heure</th>
+          <th>Produit</th>
+          <th>Mode</th>
+          <th class="text-end">Qté</th>
+          <th>Statut</th>
+          <th class="text-end px-3">Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in transactions %}
+        <tr>
+          <td class="px-3" style="color:#9c9a92">{{ t.date_courte() }}</td>
+          <!-- Méthodes date_courte() / heure() du modèle Transaction (models.py). -->
+          <td style="color:#9c9a92">{{ t.heure() }}</td>
+          <td>{{ t.produit.nom if t.produit else '—' }}</td>
+          <!-- Tiret si le produit lié a été supprimé depuis la vente. -->
+          <td>
+            {% if t.mode_paiement == 'orange' %}
+              <span class="badge" style="background:#FAEEDA;color:#633806">Orange Money</span>
+            {% elif t.mode_paiement == 'mtn' %}
+              <span class="badge" style="background:#EAF3DE;color:#27500A">MTN MoMo</span>
+            {% else %}
+              <span class="badge" style="background:#F1EFE8;color:#444441">Cash</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ t.quantite }}</td>
+          <td>
+            {% if t.statut == 'paye' %}
+              <span class="badge badge-ok">Payé</span>
+            {% else %}
+              <span class="badge badge-bas">En attente</span>
+            {% endif %}
+          </td>
+          <td class="text-end px-3"
+              style="font-weight:500;{% if t.statut == 'paye' %}color:#27500A{% else %}color:#9c9a92{% endif %}">
+            {% if t.statut == 'paye' %}+{% endif %}{{ "{:,.0f}".format(t.montant) }} F
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="p-3 text-muted" style="font-size:12px">
+      Aucune transaction sur cette période.
+    </p>
+  {% endif %}
+</div>
+
+{% endblock %}
+<!-- Fin du bloc "content". -->

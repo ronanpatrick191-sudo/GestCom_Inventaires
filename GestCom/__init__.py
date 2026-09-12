@@ -14,8 +14,9 @@ load_dotenv()
 def main(global_config, **settings):
     """Point d'entrée principal de GestCom — Pyramid démarre ici."""
     # Cette fonction est appelée par pserve (voir "main = GestCom:main" dans pyproject.toml).
-    # global_config : réglages globaux du fichier .ini (non utilisés ici).
-    # **settings : tous les réglages de la section [app:main] du fichier development.ini.
+    # global_config : réglages globaux du fichier .ini — on y lit "__file__" (le
+    #   chemin du .ini lancé) pour savoir si on tourne en production.
+    # **settings : tous les réglages de la section [app:main] du fichier .ini.
 
     # Identifiants SMTP / paiements mobiles chargés depuis .env (jamais depuis
     # le .ini versionné). Tant que les clés Orange/MTN ne sont pas définies,
@@ -52,6 +53,25 @@ def main(global_config, **settings):
             # Si une valeur a bien été trouvée dans .env...
             settings[cle_ini] = valeur
             # ...on l'ajoute aux réglages Pyramid sous le nom attendu (ex: "smtp.user").
+
+    # ── Garde-fou production ────────────────────────────────────────
+    # Le .ini versionné ne contient qu'une URL MySQL d'EXEMPLE (reconnaissable
+    # au mot « motdepasse » en clair). En production, la vraie URL doit venir
+    # de DATABASE_URL (.env ou unité systemd) et remplacer la ligne du .ini.
+    # Si ce n'est pas le cas, on REFUSE de démarrer ici, avec un message clair,
+    # plutôt que de laisser l'application planter plus tard au premier accès
+    # MySQL avec une erreur d'authentification incompréhensible.
+    fichier_ini = os.path.basename((global_config or {}).get('__file__', ''))
+    # Nom du fichier .ini utilisé au lancement (ex: "production.ini").
+    est_developpement = fichier_ini == 'development.ini'
+    # Seul development.ini a le droit de démarrer avec les identifiants d'exemple.
+    if not est_developpement and 'motdepasse' in settings.get('sqlalchemy.url', ''):
+        # « motdepasse » n'apparaît que dans les URL d'exemple, jamais dans une vraie.
+        raise RuntimeError(
+            "Demarrage refuse : sqlalchemy.url contient encore les identifiants "
+            "d'exemple du .ini. Definis DATABASE_URL (voir .env.example) dans "
+            ".env ou dans l'unite systemd avant de lancer GestCom en production."
+        )
 
     config = Configurator(settings=settings)
     # Crée l'objet de configuration principal de Pyramid avec tous les réglages rassemblés.
@@ -98,6 +118,10 @@ def main(global_config, **settings):
     # Rapport financier
     config.add_route('rapport', '/rapport')
     # Route "rapport" → page des statistiques financières (CA, profit, tendance).
+
+    # Transactions — liste filtrable (jour / semaine / mois)
+    config.add_route('transactions', '/transactions')
+    # Route "transactions" → liste de toutes les ventes (?periode=jour/semaine/mois).
 
     # Recherche globale (topbar)
     config.add_route('recherche', '/recherche')
